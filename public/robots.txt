@@ -1,0 +1,8 @@
+# Allow all web crawlers
+User-agent: *
+Allow: /
+
+# Disallow sensitive routes
+Disallow: /profile
+Disallow: /add-transaction
+Disallow: /transaction-history
