@@ -288,6 +288,11 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Ensure amounts are valid numbers
+      if (transaction.amount !== undefined) {
+        transaction.amount = Number(transaction.amount || 0);
+      }
+    
       // Format date if it exists
       const formattedTransaction = transaction.date
         ? { ...transaction, date: transaction.date.toISOString().split('T')[0] }
@@ -314,6 +319,12 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Check if transaction exists
+      const transactionToDelete = transactions.find(t => t.id === id);
+      if (!transactionToDelete) {
+        throw new Error('Transaction not found');
+      }
+    
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -334,6 +345,10 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Ensure amounts are valid numbers
+      goal.targetAmount = Number(goal.targetAmount || 0);
+      goal.currentAmount = Number(goal.currentAmount || 0);
+      
       const { data, error } = await supabase
         .from('goals')
         .insert([
@@ -370,6 +385,14 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Ensure amounts are valid numbers if they're included in the update
+      if (goal.targetAmount !== undefined) {
+        goal.targetAmount = Number(goal.targetAmount || 0);
+      }
+      if (goal.currentAmount !== undefined) {
+        goal.currentAmount = Number(goal.currentAmount || 0);
+      }
+      
       // Process the data to ensure numeric values are properly handled
       const updates: Record<string, any> = {};
       if (goal.title) updates.title = goal.title;
@@ -434,6 +457,12 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Ensure amounts are valid numbers
+      liability.totalAmount = Number(liability.totalAmount || 0);
+      liability.remainingAmount = Number(liability.remainingAmount || 0);
+      liability.interestRate = Number(liability.interestRate || 0);
+      liability.monthlyPayment = Number(liability.monthlyPayment || 0);
+      
       const { data, error } = await supabase
         .from('liabilities')
         .insert([
@@ -480,6 +509,20 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Ensure amounts are valid numbers if they're included in the update
+      if (liability.totalAmount !== undefined) {
+        liability.totalAmount = Number(liability.totalAmount || 0);
+      }
+      if (liability.remainingAmount !== undefined) {
+        liability.remainingAmount = Number(liability.remainingAmount || 0);
+      }
+      if (liability.interestRate !== undefined) {
+        liability.interestRate = Number(liability.interestRate || 0);
+      }
+      if (liability.monthlyPayment !== undefined) {
+        liability.monthlyPayment = Number(liability.monthlyPayment || 0);
+      }
+
       // Convert camelCase to snake_case for Supabase
       const supabaseLiability: any = {};
       
@@ -562,6 +605,9 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Ensure amount is a valid number
+      budget.amount = Number(budget.amount || 0);
+      
       const { data, error } = await supabase
         .from('budgets')
         .insert([
@@ -594,6 +640,14 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
+      // Ensure amounts are valid numbers if they're included in the update
+      if (budget.amount !== undefined) {
+        budget.amount = Number(budget.amount || 0);
+      }
+      if (budget.spent !== undefined) {
+        budget.spent = Number(budget.spent || 0);
+      }
+      
       // Convert values to numbers
       const supabaseBudget: any = {};
       

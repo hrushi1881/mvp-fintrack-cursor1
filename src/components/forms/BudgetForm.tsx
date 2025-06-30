@@ -50,20 +50,25 @@ export const BudgetForm: React.FC<BudgetFormProps> = ({ initialData, onSubmit, o
   const handleFormSubmit = async (data: BudgetFormData) => {
     try {
       setIsSubmitting(true);
+      setError(null); // Clear any previous errors
       setError(null);
       
       await onSubmit({
         ...data,
-        amount: Number(data.amount) || 0,
+        amount: Number(data.amount || 0),
         spent: initialData?.spent || 0,
       });
       
-      onCancel();
     } catch (error: any) {
       console.error('Error submitting budget:', error);
       setError(error.message || 'Failed to save budget. Please try again.');
     } finally {
       setIsSubmitting(false);
+      
+      // Only cancel if no error occurred
+      if (!error) {
+        onCancel();
+      }
     }
   };
 

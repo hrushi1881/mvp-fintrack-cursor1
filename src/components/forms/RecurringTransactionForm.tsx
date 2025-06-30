@@ -120,6 +120,7 @@ export const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> =
   };
 
   const handleFormSubmit = (data: RecurringTransactionFormData) => {
+    try {
     const startDate = new Date(data.startDate);
     const nextOccurrenceDate = calculateNextOccurrence(
       startDate, 
@@ -129,7 +130,7 @@ export const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> =
       data.monthOfYear
     );
 
-    onSubmit({
+    const formattedData = {
       ...data,
       amount: Number(data.amount),
       startDate,
@@ -138,7 +139,14 @@ export const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> =
       currentOccurrences: 0,
       isActive: true,
       lastProcessedDate: undefined,
-    });
+    };
+    
+    // Submit the data to parent component
+    onSubmit(formattedData);
+    } catch (error) {
+      console.error("Error in form submission:", error);
+      // Display error or handle it appropriately
+    }
   };
 
   const getPreviewText = () => {
