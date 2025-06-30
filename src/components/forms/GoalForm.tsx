@@ -51,8 +51,8 @@ export const GoalForm: React.FC<GoalFormProps> = ({
       
       await onSubmit({
         ...data,
-        targetAmount: Number(data.targetAmount) || 0,
-        currentAmount: Number(data.currentAmount) || 0,
+        targetAmount: Number(data.targetAmount || 0),
+        currentAmount: Number(data.currentAmount || 0),
         targetDate: new Date(data.targetDate),
       });
       

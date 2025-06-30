@@ -124,7 +124,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             
             // Check if user has completed onboarding
             const hasCompletedOnboarding = await getData('onboarding_completed');
-            setNeedsOnboarding(!hasCompletedOnboarding);
+            setNeedsOnboarding(hasCompletedOnboarding !== 'true');
           } else {
             // If profile doesn't exist but user is authenticated, create profile
             try {
@@ -205,7 +205,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             
             // Check if user has completed onboarding
             const hasCompletedOnboarding = await getData('onboarding_completed');
-            setNeedsOnboarding(!hasCompletedOnboarding);
+            setNeedsOnboarding(hasCompletedOnboarding !== 'true');
           } else {
             // If profile doesn't exist, create it
             try {
@@ -239,6 +239,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 
                 // New users always need onboarding
                 setNeedsOnboarding(true);
+                await removeData('onboarding_completed');
               }
             } catch (insertError) {
               console.error('Error creating profile on sign in:', insertError);
@@ -316,8 +317,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   createdAt: new Date(newProfile.created_at),
                 });
                 
-                // New users always need onboarding
-                setNeedsOnboarding(true);
+                // Check onboarding status
+                const hasCompletedOnboarding = await getData('onboarding_completed');
+                setNeedsOnboarding(hasCompletedOnboarding !== 'true');
                 return;
               }
             } catch (insertError) {
@@ -340,7 +342,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           
           // Check onboarding status
           const hasCompletedOnboarding = await getData('onboarding_completed');
-          setNeedsOnboarding(!hasCompletedOnboarding);
+          setNeedsOnboarding(hasCompletedOnboarding !== 'true');
         }
       }
     } catch (error: any) {
