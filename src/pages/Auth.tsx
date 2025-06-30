@@ -14,20 +14,26 @@ export const Auth: React.FC = () => {
   // Redirect if user is already logged in
   useEffect(() => {
     if (user) {
+      // Add a small delay to ensure complete authentication
+      const redirectTimer = setTimeout(() => {
       if (needsOnboarding) {
         navigate('/onboarding');
       } else {
         navigate('/');
       }
+      }, 1000);
+      
+      return () => clearTimeout(redirectTimer);
     }
   }, [user, needsOnboarding, navigate]);
 
   // Redirect to onboarding after successful registration
   useEffect(() => {
     if (authStatus === 'success' && !isLogin) {
+      // Extend timeout to ensure backend operations complete
       const timer = setTimeout(() => {
         navigate('/onboarding');
-      }, 2000);
+      }, 3000);
       
       return () => clearTimeout(timer);
     }

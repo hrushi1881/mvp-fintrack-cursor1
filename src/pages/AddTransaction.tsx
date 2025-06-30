@@ -59,6 +59,7 @@ export const AddTransaction: React.FC = () => {
   const handleFormSubmit = async (data: TransactionFormData) => {
     try {
       setIsSubmitting(true);
+      setError(null); // Clear any previous errors
       setError(null);
       
       if (isSplitTransaction) {
@@ -89,23 +90,29 @@ export const AddTransaction: React.FC = () => {
           formattedSplits
         );
       } else {
+        // Convert to proper number before submission
+        const amount = Number(data.amount || 0);
         // Add regular transaction
         await addTransaction({
           ...data,
-          category: data.category || (data.type === 'income' ? 
+          category: data.category || (data.type === 'income' ?
             (userCategories.find(c => c.type === 'income')?.name || 'Other') : 
             (userCategories.find(c => c.type === 'expense')?.name || 'Other')),
-          amount: Number(data.amount),
+          amount: amount,
           date: new Date(data.date),
         });
       }
 
-      navigate('/');
     } catch (error: any) {
       console.error('Error adding transaction:', error);
       setError(error.message || 'Failed to add transaction. Please try again.');
     } finally {
       setIsSubmitting(false);
+      
+      // Only navigate if no error occurred
+      if (!error) {
+        navigate('/');
+      }
     }
   };
 

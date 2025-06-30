@@ -67,6 +67,7 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
   const handleFormSubmit = async (data: LiabilityFormData) => {
     try {
       setIsSubmitting(true);
+      setError(null); // Clear any previous errors
       setError(null);
       
       // For purchase type, addAsIncome should always be false
@@ -74,21 +75,25 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
       
       await onSubmit({
         ...data,
-        totalAmount: Number(data.totalAmount) || 0,
-        remainingAmount: Number(data.remainingAmount) || 0,
-        interestRate: Number(data.interestRate) || 0,
-        monthlyPayment: Number(data.monthlyPayment) || 0,
+        totalAmount: Number(data.totalAmount || 0),
+        remainingAmount: Number(data.remainingAmount || 0),
+        interestRate: Number(data.interestRate || 0),
+        monthlyPayment: Number(data.monthlyPayment || 0),
         due_date: new Date(data.due_date),
         start_date: new Date(data.start_date),
         linkedPurchaseId: data.linkedPurchaseId || undefined,
       }, effectiveAddAsIncome);
       
-      onCancel();
     } catch (error: any) {
       console.error('Error submitting liability:', error);
       setError(error.message || 'Failed to save liability. Please try again.');
     } finally {
       setIsSubmitting(false);
+      
+      // Only cancel if no error occurred
+      if (!error) {
+        onCancel();
+      }
     }
   };
 

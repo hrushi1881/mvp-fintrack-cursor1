@@ -71,6 +71,7 @@ const AppContent: React.FC = () => {
   const handleOnboardingComplete = async (onboardingData: any) => {
     try {
       console.log("Onboarding completed with data:", onboardingData);
+      setIsInitialLoad(true); // Set loading state while processing
       
       // Create initial balance transaction if provided
       if (onboardingData.initialBalance && onboardingData.initialBalance > 0) {
@@ -150,10 +151,11 @@ const AppContent: React.FC = () => {
         await Promise.all(budgetPromises);
       }
 
-      completeOnboarding();
     } catch (error) {
       console.error('Error completing onboarding:', error);
-      completeOnboarding(); // Complete anyway to avoid blocking user
+    } finally {
+      setIsInitialLoad(false);
+      completeOnboarding(); // Complete onboarding regardless of success or failure
     }
   };
 

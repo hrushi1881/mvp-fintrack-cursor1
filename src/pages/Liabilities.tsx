@@ -30,7 +30,7 @@ export const Liabilities: React.FC = () => {
       setError(null);
       
       // Add the liability first
-      await addLiability(liability);
+      const addedLiability = await addLiability(liability);
       
       // Only add income transaction if user selected "Cash Loan" and it's not a purchase
       if (addAsIncome && liability.type !== 'purchase') {
@@ -44,7 +44,7 @@ export const Liabilities: React.FC = () => {
       }
       
       // For purchase type, create an expense transaction if linked to a purchase
-      if (liability.type === 'purchase' && liability.linkedPurchaseId) {
+      else if (liability.type === 'purchase' && liability.linkedPurchaseId) {
         // No need to create a new transaction as we're linking to an existing one
         console.log(`Linked to purchase transaction: ${liability.linkedPurchaseId}`);
       }
@@ -92,11 +92,12 @@ export const Liabilities: React.FC = () => {
   };
 
   const handleMakePayment = async (paymentData: { amount: number; description: string; createTransaction: boolean }) => {
+    setError(null);
     const liability = liabilities.find(l => l.id === selectedLiability);
     if (!liability) return;
 
     try {
-      setError(null);
+      setIsSubmitting(true);
       
       // Add payment as expense transaction if createTransaction is true
       if (paymentData.createTransaction) {
@@ -114,11 +115,17 @@ export const Liabilities: React.FC = () => {
         remainingAmount: Math.max(0, liability.remainingAmount - paymentData.amount)
       });
 
-      setShowPaymentModal(false);
-      setSelectedLiability(null);
     } catch (error: any) {
       console.error('Error making payment:', error);
       setError(error.message || 'Failed to process payment');
+    } finally {
+      setIsSubmitting(false);
+      
+      // Only close modal if no error occurred
+      if (!error) {
+        setShowPaymentModal(false);
+        setSelectedLiability(null);
+      }
     }
   };
 

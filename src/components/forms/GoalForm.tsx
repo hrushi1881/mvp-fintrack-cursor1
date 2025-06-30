@@ -47,6 +47,7 @@ export const GoalForm: React.FC<GoalFormProps> = ({
   const handleFormSubmit = async (data: GoalFormData) => {
     try {
       setIsSubmitting(true);
+      setError(null); // Clear any previous errors
       setError(null);
       
       await onSubmit({
@@ -56,12 +57,16 @@ export const GoalForm: React.FC<GoalFormProps> = ({
         targetDate: new Date(data.targetDate),
       });
       
-      onCancel();
     } catch (error: any) {
       console.error('Error submitting goal:', error);
       setError(error.message || 'Failed to save goal. Please try again.');
     } finally {
       setIsSubmitting(false);
+      
+      // If no error occurred, then cancel
+      if (!error) {
+        onCancel();
+      }
     }
   };
 
