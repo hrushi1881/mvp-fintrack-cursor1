@@ -341,8 +341,8 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
             ...goal,
             user_id: user.id,
             target_date: goal.targetDate.toISOString().split('T')[0],
-            target_amount: Number(goal.targetAmount) || 0,
-            current_amount: Number(goal.currentAmount) || 0
+            target_amount: Number(goal.targetAmount || 0),
+            current_amount: Number(goal.currentAmount || 0)
           }
         ])
         .select();
@@ -352,6 +352,8 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       if (data && data.length > 0) {
         const newGoal = {
           ...data[0],
+          targetAmount: Number(data[0].target_amount || 0),
+          currentAmount: Number(data[0].current_amount || 0),
           targetDate: new Date(data[0].target_date),
           createdAt: new Date(data[0].created_at)
         };
@@ -368,44 +370,40 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     if (!user) return;
     
     try {
-      // Convert camelCase to snake_case for Supabase
-      const supabaseGoal: any = {};
-      
-      if (goal.targetDate) {
-        supabaseGoal.target_date = goal.targetDate.toISOString().split('T')[0];
-      }
-      
-      if (goal.currentAmount !== undefined) {
-        supabaseGoal.current_amount = Number(goal.currentAmount) || 0;
-      }
-      
-      if (goal.targetAmount !== undefined) {
-        supabaseGoal.target_amount = Number(goal.targetAmount) || 0;
-      }
-      
-      if (goal.title !== undefined) {
-        supabaseGoal.title = goal.title;
-      }
-      
-      if (goal.description !== undefined) {
-        supabaseGoal.description = goal.description;
-      }
-      
-      if (goal.category !== undefined) {
-        supabaseGoal.category = goal.category;
-      }
+      // Process the data to ensure numeric values are properly handled
+      const updates: Record<string, any> = {};
+      if (goal.title) updates.title = goal.title;
+      if (goal.description) updates.description = goal.description;
+      if (goal.targetAmount !== undefined) updates.target_amount = Number(goal.targetAmount);
+      if (goal.currentAmount !== undefined) updates.current_amount = Number(goal.currentAmount);
+      if (goal.targetDate) updates.target_date = goal.targetDate.toISOString();
+      if (goal.category) updates.category = goal.category;
       
       const { error } = await supabase
         .from('goals')
-        .update(supabaseGoal)
+        .update({
+          ...updates
+        })
         .eq('id', id)
         .eq('user_id', user.id);
       
       if (error) throw error;
       
-      setGoals(prev => prev.map(g => 
-        g.id === id ? { ...g, ...goal } : g
-      ));
+      // Update local state
+      setGoals(prev => prev.map(g => {
+        if (g.id === id) {
+          return {
+            ...g,
+            ...(goal.title && { title: goal.title }),
+            ...(goal.description && { description: goal.description }),
+            ...(goal.targetAmount !== undefined && { targetAmount: Number(goal.targetAmount) }),
+            ...(goal.currentAmount !== undefined && { currentAmount: Number(goal.currentAmount) }),
+            ...(goal.targetDate && { targetDate: goal.targetDate }),
+            ...(goal.category && { category: goal.category }),
+          };
+        }
+        return g;
+      }));
     } catch (error) {
       console.error('Error updating goal:', error);
       throw error;
@@ -443,10 +441,10 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
             user_id: user.id,
             name: liability.name,
             type: liability.type,
-            total_amount: Number(liability.totalAmount) || 0,
-            remaining_amount: Number(liability.remainingAmount) || 0,
-            interest_rate: Number(liability.interestRate) || 0,
-            monthly_payment: Number(liability.monthlyPayment) || 0,
+            total_amount: Number(liability.totalAmount || 0),
+            remaining_amount: Number(liability.remainingAmount || 0),
+            interest_rate: Number(liability.interestRate || 0),
+            monthly_payment: Number(liability.monthlyPayment || 0),
             due_date: liability.due_date.toISOString().split('T')[0],
             start_date: liability.start_date.toISOString().split('T')[0],
             linked_purchase_id: liability.linkedPurchaseId
@@ -463,10 +461,10 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
           due_date: new Date(data[0].due_date),
           start_date: new Date(data[0].start_date),
           createdAt: new Date(data[0].created_at),
-          totalAmount: Number(data[0].total_amount) || 0,
-          remainingAmount: Number(data[0].remaining_amount) || 0,
-          interestRate: Number(data[0].interest_rate) || 0,
-          monthlyPayment: Number(data[0].monthly_payment) || 0,
+          totalAmount: Number(data[0].total_amount || 0),
+          remainingAmount: Number(data[0].remaining_amount || 0),
+          interestRate: Number(data[0].interest_rate || 0),
+          monthlyPayment: Number(data[0].monthly_payment || 0),
           linkedPurchaseId: data[0].linked_purchase_id
         };
         
