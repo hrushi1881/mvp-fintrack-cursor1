@@ -50,12 +50,19 @@ export const BudgetForm: React.FC<BudgetFormProps> = ({ initialData, onSubmit, o
   const handleFormSubmit = async (data: BudgetFormData) => {
     try {
       setIsSubmitting(true);
-      setError(null); // Clear any previous errors
       setError(null);
+      
+      // Ensure numeric values are properly converted and validated
+      const amount = Number(data.amount) || 0;
+      
+      if (amount <= 0) {
+        setError('Budget amount must be greater than 0');
+        return;
+      }
       
       await onSubmit({
         ...data,
-        amount: Number(data.amount || 0),
+        amount,
         spent: initialData?.spent || 0,
       });
       
@@ -64,11 +71,6 @@ export const BudgetForm: React.FC<BudgetFormProps> = ({ initialData, onSubmit, o
       setError(error.message || 'Failed to save budget. Please try again.');
     } finally {
       setIsSubmitting(false);
-      
-      // Only cancel if no error occurred
-      if (!error) {
-        onCancel();
-      }
     }
   };
 

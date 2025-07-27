@@ -26,6 +26,8 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
     percentagePaid: number;
   } | null>(null);
   
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<PaymentFormData>({
     defaultValues: {
       description: liability ? `Payment for ${liability.name}` : '',
@@ -39,23 +41,49 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
 
   // Calculate payment impact when amount changes
   React.useEffect(() => {
-    if (liability && watchedAmount && !isNaN(Number(watchedAmount))) {
-      const remainingAmount = liability.remainingAmount || 0;
-      const totalAmount = liability.totalAmount || 0;
-      const newBalance = Math.max(0, remainingAmount - Number(watchedAmount));
+    if (liability && watchedAmount) {
+      const paymentAmount = Number(watchedAmount) || 0;
+      const remainingAmount = Number(liability.remainingAmount) || 0;
+      const totalAmount = Number(liability.totalAmount) || 0;
+      
+      if (paymentAmount > 0 && !isNaN(paymentAmount)) {
+        const newBalance = Math.max(0, remainingAmount - paymentAmount);
       const percentagePaid = totalAmount > 0 ? ((totalAmount - newBalance) / totalAmount) * 100 : 0;
       setPaymentImpact({ newBalance, percentagePaid });
+      } else {
+        setPaymentImpact(null);
+      }
     } else {
       setPaymentImpact(null);
     }
   }, [watchedAmount, liability]);
 
   const handleFormSubmit = (data: PaymentFormData) => {
-    onSubmit({
-      amount: Number(data.amount),
-      description: data.description,
-      createTransaction: data.createTransaction,
-    });
+    try {
+      setIsSubmitting(true);
+      
+      const amount = Number(data.amount) || 0;
+      
+      if (amount <= 0) {
+        throw new Error('Payment amount must be greater than 0');
+      }
+      
+      const remainingAmount = Number(liability?.remainingAmount) || 0;
+      if (amount > remainingAmount) {
+        throw new Error('Payment amount cannot exceed remaining balance');
+      }
+      
+      onSubmit({
+        amount,
+        description: data.description || `Payment for ${liability?.name}`,
+        createTransaction: data.createTransaction,
+      });
+    } catch (error: any) {
+      console.error('Error processing payment:', error);
+      // Handle error display here if needed
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleQuickAmount = (amount: number) => {
@@ -65,9 +93,9 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
   if (!liability) return null;
 
   // Safe access to liability properties with defaults
-  const remainingAmount = liability.remainingAmount || 0;
-  const monthlyPayment = liability.monthlyPayment || 0;
-  const totalAmount = liability.totalAmount || 0;
+  const remainingAmount = Number(liability.remainingAmount) || 0;
+  const monthlyPayment = Number(liability.monthlyPayment) || 0;
+  const totalAmount = Number(liability.totalAmount) || 0;
 
   return (
     <div className="space-y-6">

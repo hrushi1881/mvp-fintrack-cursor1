@@ -18,12 +18,20 @@ export const OnboardingComplete: React.FC<OnboardingCompleteProps> = ({
   const { formatCurrency } = useInternationalization();
 
   const handleComplete = async () => {
-    setIsCreatingData(true);
-    
-    // Simulate creating initial data
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    onComplete();
+    try {
+      setIsCreatingData(true);
+      
+      // Simulate creating initial data
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      onComplete();
+    } catch (error) {
+      console.error('Error completing onboarding:', error);
+      // Still complete onboarding even if there's an error
+      onComplete();
+    } finally {
+      setIsCreatingData(false);
+    }
   };
 
   const features = [

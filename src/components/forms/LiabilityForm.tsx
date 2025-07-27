@@ -67,18 +67,48 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
   const handleFormSubmit = async (data: LiabilityFormData) => {
     try {
       setIsSubmitting(true);
-      setError(null); // Clear any previous errors
       setError(null);
+      
+      // Ensure all numeric values are properly converted and validated
+      const totalAmount = Number(data.totalAmount) || 0;
+      const remainingAmount = Number(data.remainingAmount) || 0;
+      const interestRate = Number(data.interestRate) || 0;
+      const monthlyPayment = Number(data.monthlyPayment) || 0;
+      
+      if (totalAmount <= 0) {
+        setError('Total amount must be greater than 0');
+        return;
+      }
+      
+      if (remainingAmount < 0) {
+        setError('Remaining amount cannot be negative');
+        return;
+      }
+      
+      if (remainingAmount > totalAmount) {
+        setError('Remaining amount cannot exceed total amount');
+        return;
+      }
+      
+      if (interestRate < 0) {
+        setError('Interest rate cannot be negative');
+        return;
+      }
+      
+      if (monthlyPayment <= 0) {
+        setError('Monthly payment must be greater than 0');
+        return;
+      }
       
       // For purchase type, addAsIncome should always be false
       const effectiveAddAsIncome = selectedType === 'purchase' ? false : addAsIncome;
       
       await onSubmit({
         ...data,
-        totalAmount: Number(data.totalAmount || 0),
-        remainingAmount: Number(data.remainingAmount || 0),
-        interestRate: Number(data.interestRate || 0),
-        monthlyPayment: Number(data.monthlyPayment || 0),
+        totalAmount,
+        remainingAmount,
+        interestRate,
+        monthlyPayment,
         due_date: new Date(data.due_date),
         start_date: new Date(data.start_date),
         linkedPurchaseId: data.linkedPurchaseId || undefined,
@@ -89,11 +119,6 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
       setError(error.message || 'Failed to save liability. Please try again.');
     } finally {
       setIsSubmitting(false);
-      
-      // Only cancel if no error occurred
-      if (!error) {
-        onCancel();
-      }
     }
   };
 

@@ -32,7 +32,15 @@ export const Goals: React.FC = () => {
     try {
       setIsSubmitting(true);
       setError(null);
-      await addGoal(goal);
+      
+      // Ensure numeric values are properly converted
+      const sanitizedGoal = {
+        ...goal,
+        targetAmount: Number(goal.targetAmount) || 0,
+        currentAmount: Number(goal.currentAmount) || 0,
+      };
+      
+      await addGoal(sanitizedGoal);
       setShowModal(false);
     } catch (error: any) {
       console.error('Error adding goal:', error);
@@ -47,8 +55,15 @@ export const Goals: React.FC = () => {
       setIsSubmitting(true);
       setError(null);
       
+      // Ensure numeric values are properly converted
+      const sanitizedGoal = {
+        ...goal,
+        targetAmount: Number(goal.targetAmount) || 0,
+        currentAmount: Number(goal.currentAmount) || 0,
+      };
+      
       if (editingGoal) {
-        await updateGoal(editingGoal.id, goal);
+        await updateGoal(editingGoal.id, sanitizedGoal);
         setEditingGoal(null);
         setShowEditModal(false);
       }
@@ -91,23 +106,29 @@ export const Goals: React.FC = () => {
       if (!goal) return;
 
       const { amount, type, source, description, deductFromBalance } = data;
+      const numericAmount = Number(amount) || 0;
 
       if (type === 'add') {
         // Add money to goal
+        const currentAmount = Number(goal.currentAmount) || 0;
+        const targetAmount = Number(goal.targetAmount) || 0;
+        const newAmount = Math.min(currentAmount + numericAmount, targetAmount);
+        
         await updateGoal(selectedGoalId!, {
-          currentAmount: Math.min((Number(goal.currentAmount) || 0) + (Number(amount) || 0), (Number(goal.targetAmount) || 0))
+          currentAmount: newAmount
         });
 
         if (source === 'emergency_fund' && emergencyFund) {
           // Deduct from emergency fund
+          const emergencyCurrentAmount = Number(emergencyFund.currentAmount) || 0;
           await updateGoal(emergencyFund.id, {
-            currentAmount: Math.max(0, (Number(emergencyFund.currentAmount) || 0) - (Number(amount) || 0))
+            currentAmount: Math.max(0, emergencyCurrentAmount - numericAmount)
           });
           
           // Record as internal transfer
           await addTransaction({
             type: 'expense',
-            amount: Number(amount) || 0,
+            amount: numericAmount,
             category: 'Internal Transfer',
             description: `${description} (from Emergency Fund)`,
             date: new Date(),
@@ -116,7 +137,7 @@ export const Goals: React.FC = () => {
           // Record as savings/investment expense (money leaves account)
           await addTransaction({
             type: 'expense',
-            amount: Number(amount) || 0,
+            amount: numericAmount,
             category: 'Savings',
             description: description,
             date: new Date(),
@@ -126,20 +147,24 @@ export const Goals: React.FC = () => {
         // This is useful for tracking gifts, bonuses, or manual transfers
       } else {
         // Withdraw money from goal
+        const currentAmount = Number(goal.currentAmount) || 0;
+        const newAmount = Math.max(0, currentAmount - numericAmount);
+        
         await updateGoal(selectedGoalId!, {
-          currentAmount: Math.max(0, (Number(goal.currentAmount) || 0) - (Number(amount) || 0))
+          currentAmount: newAmount
         });
 
         if (source === 'emergency_fund' && emergencyFund) {
           // Add to emergency fund
+          const emergencyCurrentAmount = Number(emergencyFund.currentAmount) || 0;
           await updateGoal(emergencyFund.id, {
-            currentAmount: (Number(emergencyFund.currentAmount) || 0) + (Number(amount) || 0)
+            currentAmount: emergencyCurrentAmount + numericAmount
           });
           
           // Record as internal transfer
           await addTransaction({
             type: 'income',
-            amount: Number(amount) || 0,
+            amount: numericAmount,
             category: 'Internal Transfer',
             description: `${description} (to Emergency Fund)`,
             date: new Date(),
@@ -148,7 +173,7 @@ export const Goals: React.FC = () => {
           // Record as income (money withdrawn to external account)
           await addTransaction({
             type: 'income',
-            amount: Number(amount) || 0,
+            amount: numericAmount,
             category: 'Goal Withdrawal',
             description: description,
             date: new Date(),
@@ -231,7 +256,9 @@ export const Goals: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {goals.map((goal) => {
-              const progress = ((Number(goal.currentAmount) || 0) / (Number(goal.targetAmount) || 1)) * 100;
+              const currentAmount = Number(goal.currentAmount) || 0;
+              const targetAmount = Number(goal.targetAmount) || 1; // Avoid division by zero
+              const progress = (currentAmount / targetAmount) * 100;
               const isCompleted = progress >= 100;
               const isEmergencyFund = goal.category.toLowerCase() === 'emergency';
               const estimatedCompletion = getEstimatedCompletion(goal);
@@ -286,7 +313,7 @@ export const Goals: React.FC = () => {
                       <span className="text-xs sm:text-sm text-gray-400">Progress</span>
                       <span className="text-sm sm:text-lg font-semibold text-white">
                         <CurrencyIcon currencyCode={currency.code} size={16} className="inline mr-1" />
-                        {(Number(goal.currentAmount) || 0).toLocaleString()} / <CurrencyIcon currencyCode={currency.code} size={16} className="inline mr-1" />{(Number(goal.targetAmount) || 0).toLocaleString()}
+                        {currentAmount.toLocaleString()} / <CurrencyIcon currencyCode={currency.code} size={16} className="inline mr-1" />{targetAmount.toLocaleString()}
                       </span>
                     </div>
                     
@@ -310,7 +337,7 @@ export const Goals: React.FC = () => {
                       </span>
                       <span className="text-gray-400">
                         <CurrencyIcon currencyCode={currency.code} size={12} className="inline mr-1" />
-                        {((Number(goal.targetAmount) || 0) - (Number(goal.currentAmount) || 0)).toLocaleString()} remaining
+                        {Math.max(0, targetAmount - currentAmount).toLocaleString()} remaining
                       </span>
                     </div>
                   </div>

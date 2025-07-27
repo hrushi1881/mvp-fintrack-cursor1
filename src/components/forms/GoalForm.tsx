@@ -47,13 +47,31 @@ export const GoalForm: React.FC<GoalFormProps> = ({
   const handleFormSubmit = async (data: GoalFormData) => {
     try {
       setIsSubmitting(true);
-      setError(null); // Clear any previous errors
       setError(null);
+      
+      // Ensure numeric values are properly converted and validated
+      const targetAmount = Number(data.targetAmount) || 0;
+      const currentAmount = Number(data.currentAmount) || 0;
+      
+      if (targetAmount <= 0) {
+        setError('Target amount must be greater than 0');
+        return;
+      }
+      
+      if (currentAmount < 0) {
+        setError('Current amount cannot be negative');
+        return;
+      }
+      
+      if (currentAmount > targetAmount) {
+        setError('Current amount cannot exceed target amount');
+        return;
+      }
       
       await onSubmit({
         ...data,
-        targetAmount: Number(data.targetAmount || 0),
-        currentAmount: Number(data.currentAmount || 0),
+        targetAmount,
+        currentAmount,
         targetDate: new Date(data.targetDate),
       });
       
@@ -62,11 +80,6 @@ export const GoalForm: React.FC<GoalFormProps> = ({
       setError(error.message || 'Failed to save goal. Please try again.');
     } finally {
       setIsSubmitting(false);
-      
-      // If no error occurred, then cancel
-      if (!error) {
-        onCancel();
-      }
     }
   };
 

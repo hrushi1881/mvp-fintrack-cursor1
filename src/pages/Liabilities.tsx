@@ -27,47 +27,71 @@ export const Liabilities: React.FC = () => {
 
   const handleAddLiability = async (liability: any, addAsIncome: boolean) => {
     try {
+      setIsSubmitting(true);
       setError(null);
       
+      // Ensure all numeric values are properly converted
+      const sanitizedLiability = {
+        ...liability,
+        totalAmount: Number(liability.totalAmount) || 0,
+        remainingAmount: Number(liability.remainingAmount) || 0,
+        interestRate: Number(liability.interestRate) || 0,
+        monthlyPayment: Number(liability.monthlyPayment) || 0,
+      };
+      
       // Add the liability first
-      const addedLiability = await addLiability(liability);
+      await addLiability(sanitizedLiability);
       
       // Only add income transaction if user selected "Cash Loan" and it's not a purchase
-      if (addAsIncome && liability.type !== 'purchase') {
+      if (addAsIncome && sanitizedLiability.type !== 'purchase') {
         await addTransaction({
           type: 'income',
-          amount: liability.totalAmount,
+          amount: sanitizedLiability.totalAmount,
           category: 'Loan',
-          description: `Loan received: ${liability.name}`,
+          description: `Loan received: ${sanitizedLiability.name}`,
           date: new Date(),
         });
       }
       
       // For purchase type, create an expense transaction if linked to a purchase
-      else if (liability.type === 'purchase' && liability.linkedPurchaseId) {
+      else if (sanitizedLiability.type === 'purchase' && sanitizedLiability.linkedPurchaseId) {
         // No need to create a new transaction as we're linking to an existing one
-        console.log(`Linked to purchase transaction: ${liability.linkedPurchaseId}`);
+        console.log(`Linked to purchase transaction: ${sanitizedLiability.linkedPurchaseId}`);
       }
       
       setShowModal(false);
     } catch (error: any) {
       console.error('Error adding liability:', error);
       setError(error.message || 'Failed to add liability');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleEditLiability = async (liability: Omit<Liability, 'id' | 'userId' | 'createdAt'>, addAsIncome: boolean) => {
     try {
+      setIsSubmitting(true);
       setError(null);
       
+      // Ensure all numeric values are properly converted
+      const sanitizedLiability = {
+        ...liability,
+        totalAmount: Number(liability.totalAmount) || 0,
+        remainingAmount: Number(liability.remainingAmount) || 0,
+        interestRate: Number(liability.interestRate) || 0,
+        monthlyPayment: Number(liability.monthlyPayment) || 0,
+      };
+      
       if (editingLiability) {
-        await updateLiability(editingLiability.id, liability);
+        await updateLiability(editingLiability.id, sanitizedLiability);
         setEditingLiability(null);
         setShowEditModal(false);
       }
     } catch (error: any) {
       console.error('Error updating liability:', error);
       setError(error.message || 'Failed to update liability');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -78,6 +102,7 @@ export const Liabilities: React.FC = () => {
 
   const confirmDeleteLiability = async () => {
     try {
+      setIsSubmitting(true);
       setError(null);
       
       if (liabilityToDelete) {
@@ -88,8 +113,12 @@ export const Liabilities: React.FC = () => {
     } catch (error: any) {
       console.error('Error deleting liability:', error);
       setError(error.message || 'Failed to delete liability');
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleMakePayment = async (paymentData: { amount: number; description: string; createTransaction: boolean }) => {
     setError(null);
@@ -99,11 +128,14 @@ export const Liabilities: React.FC = () => {
     try {
       setIsSubmitting(true);
       
+      const paymentAmount = Number(paymentData.amount) || 0;
+      const currentRemaining = Number(liability.remainingAmount) || 0;
+      
       // Add payment as expense transaction if createTransaction is true
       if (paymentData.createTransaction) {
         await addTransaction({
           type: 'expense',
-          amount: paymentData.amount,
+          amount: paymentAmount,
           category: 'Debt Payment',
           description: paymentData.description || `Payment for ${liability.name}`,
           date: new Date(),
@@ -112,7 +144,7 @@ export const Liabilities: React.FC = () => {
 
       // Update liability remaining amount
       await updateLiability(selectedLiability!, {
-        remainingAmount: Math.max(0, liability.remainingAmount - paymentData.amount)
+        remainingAmount: Math.max(0, currentRemaining - paymentAmount)
       });
 
     } catch (error: any) {
@@ -129,8 +161,8 @@ export const Liabilities: React.FC = () => {
     }
   };
 
-  const totalDebt = liabilities.reduce((sum, l) => sum + l.remainingAmount, 0);
-  const totalMonthlyPayments = liabilities.reduce((sum, l) => sum + l.monthlyPayment, 0);
+  const totalDebt = liabilities.reduce((sum, l) => sum + (Number(l.remainingAmount) || 0), 0);
+  const totalMonthlyPayments = liabilities.reduce((sum, l) => sum + (Number(l.monthlyPayment) || 0), 0);
 
   const getTypeLabel = (type: string) => {
     const labels = {
@@ -271,7 +303,12 @@ export const Liabilities: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {liabilities.map((liability) => {
-              const payoffProgress = ((liability.totalAmount - liability.remainingAmount) / liability.totalAmount) * 100;
+              const totalAmount = Number(liability.totalAmount) || 0;
+              const remainingAmount = Number(liability.remainingAmount) || 0;
+              const monthlyPayment = Number(liability.monthlyPayment) || 0;
+              const interestRate = Number(liability.interestRate) || 0;
+              
+              const payoffProgress = totalAmount > 0 ? ((totalAmount - remainingAmount) / totalAmount) * 100 : 0;
               const estimatedPayoff = getEstimatedPayoff(liability);
               const TypeIcon = getTypeIcon(liability.type);
               const daysUntilDue = getDaysUntilDue(liability.due_date);
@@ -329,9 +366,9 @@ export const Liabilities: React.FC = () => {
                       <div className="flex items-center space-x-2">
                         <ShoppingCart size={14} className="text-purple-400" />
                         <p className="text-xs text-purple-300">
-                          Linked to purchase: <span className="font-medium">{linkedPurchase.description}</span> ({formatCurrency(linkedPurchase.amount)})
+                  {interestRate > 0 && (
                         </p>
-                      </div>
+                      {interestRate}% APR
                     </div>
                   )}
 
@@ -340,7 +377,7 @@ export const Liabilities: React.FC = () => {
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs sm:text-sm text-gray-400">Paid Off</span>
                       <span className="text-sm sm:text-lg font-semibold text-white">
-                        {formatCurrency(liability.totalAmount - liability.remainingAmount)} / {formatCurrency(liability.totalAmount)}
+                        {formatCurrency(totalAmount - remainingAmount)} / {formatCurrency(totalAmount)}
                       </span>
                     </div>
                     
@@ -357,7 +394,7 @@ export const Liabilities: React.FC = () => {
                         {payoffProgress.toFixed(1)}% paid off
                       </span>
                       <span className="text-gray-400">
-                        {formatCurrency(liability.remainingAmount)} remaining
+                        {formatCurrency(remainingAmount)} remaining
                       </span>
                     </div>
                   </div>
@@ -389,7 +426,7 @@ export const Liabilities: React.FC = () => {
                       <div>
                         <p className="text-xs text-gray-400">Monthly Payment</p>
                         <p className="text-xs sm:text-sm font-medium text-white">
-                          {formatCurrency(liability.monthlyPayment)}
+                          {formatCurrency(monthlyPayment)}
                         </p>
                       </div>
                     </div>
