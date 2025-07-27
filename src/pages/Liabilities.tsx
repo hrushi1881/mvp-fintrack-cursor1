@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CreditCard, Calendar, Percent, TrendingDown, Plus, Edit3, Trash2, BarChart3, Calculator, Info, AlertTriangle, ShoppingCart } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
+import { toNumber, calculatePercentage, sanitizeFinancialData } from '../utils/validation';
 import { TopNavigation } from '../components/layout/TopNavigation';
 import { Modal } from '../components/common/Modal';
 import { LiabilityForm } from '../components/forms/LiabilityForm';
@@ -30,14 +31,13 @@ export const Liabilities: React.FC = () => {
       setIsSubmitting(true);
       setError(null);
       
-      // Ensure all numeric values are properly converted
-      const sanitizedLiability = {
-        ...liability,
-        totalAmount: Number(liability.totalAmount) || 0,
-        remainingAmount: Number(liability.remainingAmount) || 0,
-        interestRate: Number(liability.interestRate) || 0,
-        monthlyPayment: Number(liability.monthlyPayment) || 0,
-      };
+      // Sanitize numeric fields to prevent NaN
+      const sanitizedLiability = sanitizeFinancialData(liability, [
+        'totalAmount', 
+        'remainingAmount', 
+        'interestRate', 
+        'monthlyPayment'
+      ]);
       
       // Add the liability first
       await addLiability(sanitizedLiability);
@@ -46,7 +46,7 @@ export const Liabilities: React.FC = () => {
       if (addAsIncome && sanitizedLiability.type !== 'purchase') {
         await addTransaction({
           type: 'income',
-          amount: sanitizedLiability.totalAmount,
+          amount: toNumber(sanitizedLiability.totalAmount),
           category: 'Loan',
           description: `Loan received: ${sanitizedLiability.name}`,
           date: new Date(),
@@ -73,14 +73,13 @@ export const Liabilities: React.FC = () => {
       setIsSubmitting(true);
       setError(null);
       
-      // Ensure all numeric values are properly converted
-      const sanitizedLiability = {
-        ...liability,
-        totalAmount: Number(liability.totalAmount) || 0,
-        remainingAmount: Number(liability.remainingAmount) || 0,
-        interestRate: Number(liability.interestRate) || 0,
-        monthlyPayment: Number(liability.monthlyPayment) || 0,
-      };
+      // Sanitize numeric fields to prevent NaN
+      const sanitizedLiability = sanitizeFinancialData(liability, [
+        'totalAmount', 
+        'remainingAmount', 
+        'interestRate', 
+        'monthlyPayment'
+      ]);
       
       if (editingLiability) {
         await updateLiability(editingLiability.id, sanitizedLiability);
@@ -135,7 +134,7 @@ export const Liabilities: React.FC = () => {
       if (paymentData.createTransaction) {
         await addTransaction({
           type: 'expense',
-          amount: paymentAmount,
+          amount: toNumber(paymentAmount),
           category: 'Debt Payment',
           description: paymentData.description || `Payment for ${liability.name}`,
           date: new Date(),
@@ -144,7 +143,7 @@ export const Liabilities: React.FC = () => {
 
       // Update liability remaining amount
       await updateLiability(selectedLiability!, {
-        remainingAmount: Math.max(0, currentRemaining - paymentAmount)
+        remainingAmount: Math.max(0, toNumber(currentRemaining) - toNumber(paymentAmount))
       });
 
     } catch (error: any) {
@@ -161,8 +160,8 @@ export const Liabilities: React.FC = () => {
     }
   };
 
-  const totalDebt = liabilities.reduce((sum, l) => sum + (Number(l.remainingAmount) || 0), 0);
-  const totalMonthlyPayments = liabilities.reduce((sum, l) => sum + (Number(l.monthlyPayment) || 0), 0);
+  const totalDebt = liabilities.reduce((sum, l) => sum + toNumber(l.remainingAmount), 0);
+  const totalMonthlyPayments = liabilities.reduce((sum, l) => sum + toNumber(l.monthlyPayment), 0);
 
   const getTypeLabel = (type: string) => {
     const labels = {
@@ -303,12 +302,12 @@ export const Liabilities: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {liabilities.map((liability) => {
-              const totalAmount = Number(liability.totalAmount) || 0;
-              const remainingAmount = Number(liability.remainingAmount) || 0;
-              const monthlyPayment = Number(liability.monthlyPayment) || 0;
-              const interestRate = Number(liability.interestRate) || 0;
+              const totalAmount = toNumber(liability.totalAmount);
+              const remainingAmount = toNumber(liability.remainingAmount);
+              const monthlyPayment = toNumber(liability.monthlyPayment);
+              const interestRate = toNumber(liability.interestRate);
               
-              const payoffProgress = totalAmount > 0 ? ((totalAmount - remainingAmount) / totalAmount) * 100 : 0;
+              const payoffProgress = calculatePercentage(totalAmount - remainingAmount, totalAmount);
               const estimatedPayoff = getEstimatedPayoff(liability);
               const TypeIcon = getTypeIcon(liability.type);
               const daysUntilDue = getDaysUntilDue(liability.due_date);

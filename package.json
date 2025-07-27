@@ -43,7 +43,7 @@
     "react-router-dom": "^6.22.3",
     "recharts": "^2.12.2",
     "three": "^0.160.0",
-    "zod": "^3.22.4"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@capacitor/cli": "^5.7.8",

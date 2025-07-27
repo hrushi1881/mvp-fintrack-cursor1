@@ -122,9 +122,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               createdAt: new Date(profile.created_at),
             });
             
-            // Check if user has completed onboarding
-            const hasCompletedOnboarding = await getData('onboarding_completed');
-            setNeedsOnboarding(hasCompletedOnboarding !== 'true');
+            // For existing users (returning users), check if they have any financial data
+            // If they have data, skip onboarding; if not, they may need onboarding
+            try {
+              const { data: transactions } = await supabase
+                .from('transactions')
+                .select('id')
+                .eq('user_id', session.user.id)
+                .limit(1);
+              
+              const { data: goals } = await supabase
+                .from('goals')
+                .select('id')
+                .eq('user_id', session.user.id)
+                .limit(1);
+              
+              // If user has any transactions or goals, they've used the app before
+              const hasFinancialData = (transactions && transactions.length > 0) || (goals && goals.length > 0);
+              
+              if (hasFinancialData) {
+                // Existing user with data - skip onboarding
+                setNeedsOnboarding(false);
+                await storeData('onboarding_completed', 'true');
+              } else {
+                // Check if they explicitly completed onboarding before
+                const hasCompletedOnboarding = await getData('onboarding_completed');
+                setNeedsOnboarding(hasCompletedOnboarding !== 'true');
+              }
+            } catch (dataCheckError) {
+              console.error('Error checking user data:', dataCheckError);
+              // Fallback to checking onboarding completion flag
+              const hasCompletedOnboarding = await getData('onboarding_completed');
+              setNeedsOnboarding(hasCompletedOnboarding !== 'true');
+            }
           } else {
             // If profile doesn't exist but user is authenticated, create profile
             try {

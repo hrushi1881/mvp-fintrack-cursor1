@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
+import { validateTransaction, sanitizeFinancialData, toNumber } from '../utils/validation';
 import { PageNavigation } from '../components/layout/PageNavigation';
 import { useFinance } from '../contexts/FinanceContext';
 import { useInternationalization } from '../contexts/InternationalizationContext';
@@ -64,9 +65,11 @@ export const AddTransaction: React.FC = () => {
       
       if (isSplitTransaction) {
         // Validate splits
-        const totalSplitAmount = splits.reduce((sum, split) => sum + (Number(split.amount) || 0), 0);
-        if (totalSplitAmount !== data.amount) {
-          setError(`Split amounts must equal the total amount (${data.amount})`);
+        const totalSplitAmount = splits.reduce((sum, split) => sum + toNumber(split.amount), 0);
+        const mainAmount = toNumber(data.amount);
+        
+        if (Math.abs(totalSplitAmount - mainAmount) > 0.01) { // Allow for small rounding differences
+          setError(`Split amounts must equal the total amount (${mainAmount})`);
           setIsSubmitting(false);
           return;
         }
@@ -74,31 +77,38 @@ export const AddTransaction: React.FC = () => {
         // Format splits for submission
         const formattedSplits: SplitTransaction[] = splits.map(split => ({
           category: split.category,
-          amount: Number(split.amount),
+          amount: toNumber(split.amount),
           description: split.description || data.description
         }));
+
+        // Validate main transaction data
+        const validatedData = validateTransaction({
+          ...data,
+          amount: mainAmount,
+        });
 
         // Add split transaction
         await addSplitTransaction(
           {
-            type: data.type,
-            amount: Number(data.amount),
-            description: data.description,
-            category: data.category || (data.type === 'income' ? 'Income' : 'Expense'),
+            ...validatedData,
             date: new Date(data.date),
           },
           formattedSplits
         );
       } else {
-        // Convert to proper number before submission
-        const amount = Number(data.amount || 0);
+        // Sanitize and validate data
+        const sanitizedData = sanitizeFinancialData(data, ['amount']);
+        const validatedData = validateTransaction({
+          ...sanitizedData,
+          amount: toNumber(sanitizedData.amount),
+        });
+        
         // Add regular transaction
         await addTransaction({
-          ...data,
+          ...validatedData,
           category: data.category || (data.type === 'income' ?
             (userCategories.find(c => c.type === 'income')?.name || 'Other') : 
             (userCategories.find(c => c.type === 'expense')?.name || 'Other')),
-          amount: amount,
           date: new Date(data.date),
         });
       }
@@ -151,12 +161,15 @@ export const AddTransaction: React.FC = () => {
 
   const updateSplitField = (index: number, field: keyof SplitFormData, value: string | number) => {
     const newSplits = [...splits];
-    newSplits[index] = { ...newSplits[index], [field]: value };
+    newSplits[index] = { 
+      ...newSplits[index], 
+      [field]: field === 'amount' ? toNumber(value) : value 
+    };
     setSplits(newSplits);
   };
 
-  const totalSplitAmount = splits.reduce((sum, split) => sum + (Number(split.amount) || 0), 0);
-  const splitAmountDifference = amount - totalSplitAmount;
+  const totalSplitAmount = splits.reduce((sum, split) => sum + toNumber(split.amount), 0);
+  const splitAmountDifference = toNumber(amount) - totalSplitAmount;
 
   const quickAmounts = type === 'income' 
     ? [1000, 2500, 5000, 10000]

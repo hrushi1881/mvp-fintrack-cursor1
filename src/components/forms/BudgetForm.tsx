@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Calculator, Tag, Calendar, AlertCircle } from 'lucide-react';
+import { validateBudget, sanitizeFinancialData, toNumber } from '../../utils/validation';
 import { Input } from '../common/Input';
 import { Button } from '../common/Button';
 import { Budget } from '../../types';
@@ -52,17 +53,15 @@ export const BudgetForm: React.FC<BudgetFormProps> = ({ initialData, onSubmit, o
       setIsSubmitting(true);
       setError(null);
       
-      // Ensure numeric values are properly converted and validated
-      const amount = Number(data.amount) || 0;
-      
-      if (amount <= 0) {
-        setError('Budget amount must be greater than 0');
-        return;
-      }
+      // Sanitize and validate data
+      const sanitizedData = sanitizeFinancialData(data, ['amount']);
+      const validatedData = validateBudget({
+        ...sanitizedData,
+        amount: toNumber(sanitizedData.amount),
+      });
       
       await onSubmit({
-        ...data,
-        amount,
+        ...validatedData,
         spent: initialData?.spent || 0,
       });
       

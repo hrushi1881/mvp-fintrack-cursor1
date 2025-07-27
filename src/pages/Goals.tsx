@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Target, Calendar, Plus, ArrowUpDown, TrendingUp, Edit3, Trash2, AlertCircle } from 'lucide-react';
 import { format, differenceInMonths } from 'date-fns';
+import { toNumber, calculatePercentage, sanitizeFinancialData } from '../utils/validation';
 import { TopNavigation } from '../components/layout/TopNavigation';
 import { Modal } from '../components/common/Modal';
 import { GoalForm } from '../components/forms/GoalForm';
@@ -33,12 +34,8 @@ export const Goals: React.FC = () => {
       setIsSubmitting(true);
       setError(null);
       
-      // Ensure numeric values are properly converted
-      const sanitizedGoal = {
-        ...goal,
-        targetAmount: Number(goal.targetAmount) || 0,
-        currentAmount: Number(goal.currentAmount) || 0,
-      };
+      // Sanitize numeric fields to prevent NaN
+      const sanitizedGoal = sanitizeFinancialData(goal, ['targetAmount', 'currentAmount']);
       
       await addGoal(sanitizedGoal);
       setShowModal(false);
@@ -55,12 +52,8 @@ export const Goals: React.FC = () => {
       setIsSubmitting(true);
       setError(null);
       
-      // Ensure numeric values are properly converted
-      const sanitizedGoal = {
-        ...goal,
-        targetAmount: Number(goal.targetAmount) || 0,
-        currentAmount: Number(goal.currentAmount) || 0,
-      };
+      // Sanitize numeric fields to prevent NaN
+      const sanitizedGoal = sanitizeFinancialData(goal, ['targetAmount', 'currentAmount']);
       
       if (editingGoal) {
         await updateGoal(editingGoal.id, sanitizedGoal);
@@ -256,9 +249,9 @@ export const Goals: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {goals.map((goal) => {
-              const currentAmount = Number(goal.currentAmount) || 0;
-              const targetAmount = Number(goal.targetAmount) || 1; // Avoid division by zero
-              const progress = (currentAmount / targetAmount) * 100;
+              const currentAmount = toNumber(goal.currentAmount);
+              const targetAmount = toNumber(goal.targetAmount);
+              const progress = calculatePercentage(currentAmount, targetAmount);
               const isCompleted = progress >= 100;
               const isEmergencyFund = goal.category.toLowerCase() === 'emergency';
               const estimatedCompletion = getEstimatedCompletion(goal);

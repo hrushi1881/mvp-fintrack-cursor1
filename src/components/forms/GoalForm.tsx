@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Target, FileText, Calendar } from 'lucide-react';
+import { validateGoal, sanitizeFinancialData, toNumber } from '../../utils/validation';
 import { Input } from '../common/Input';
 import { Button } from '../common/Button';
 import { Goal } from '../../types';
 import { useInternationalization } from '../../contexts/InternationalizationContext';
 import { CurrencyIcon } from '../common/CurrencyIcon';
+import { AlertCircle } from 'lucide-react';
 
 interface GoalFormData {
   title: string;
@@ -49,29 +51,18 @@ export const GoalForm: React.FC<GoalFormProps> = ({
       setIsSubmitting(true);
       setError(null);
       
-      // Ensure numeric values are properly converted and validated
-      const targetAmount = Number(data.targetAmount) || 0;
-      const currentAmount = Number(data.currentAmount) || 0;
+      // Sanitize numeric fields
+      const sanitizedData = sanitizeFinancialData(data, ['targetAmount', 'currentAmount']);
       
-      if (targetAmount <= 0) {
-        setError('Target amount must be greater than 0');
-        return;
-      }
-      
-      if (currentAmount < 0) {
-        setError('Current amount cannot be negative');
-        return;
-      }
-      
-      if (currentAmount > targetAmount) {
-        setError('Current amount cannot exceed target amount');
-        return;
-      }
+      // Validate using schema
+      const validatedData = validateGoal({
+        ...sanitizedData,
+        targetAmount: toNumber(sanitizedData.targetAmount),
+        currentAmount: toNumber(sanitizedData.currentAmount),
+      });
       
       await onSubmit({
-        ...data,
-        targetAmount,
-        currentAmount,
+        ...validatedData,
         targetDate: new Date(data.targetDate),
       });
       
