@@ -366,9 +366,9 @@ export const Liabilities: React.FC = () => {
                       <div className="flex items-center space-x-2">
                         <ShoppingCart size={14} className="text-purple-400" />
                         <p className="text-xs text-purple-300">
-                  {interestRate > 0 && (
+                          Linked to purchase: {linkedPurchase.description}
                         </p>
-                      {interestRate}% APR
+                      </div>
                     </div>
                   )}
 
