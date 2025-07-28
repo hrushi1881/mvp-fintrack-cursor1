@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Target, Calendar, Plus, ArrowUpDown, TrendingUp, Edit3, Trash2, AlertCircle } from 'lucide-react';
+import { Target, Calendar, Plus, ArrowUpDown, TrendingUp, Edit3, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
 import { format, differenceInMonths } from 'date-fns';
 import { toNumber, calculatePercentage, sanitizeFinancialData } from '../utils/validation';
 import { TopNavigation } from '../components/layout/TopNavigation';
