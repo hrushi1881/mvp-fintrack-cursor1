@@ -63,24 +63,24 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
       setIsSubmitting(true);
       
       const amount = Number(data.amount) || 0;
+      const remainingAmount = Number(liability?.remainingAmount) || 0;
       
       if (amount <= 0) {
         throw new Error('Payment amount must be greater than 0');
       }
       
-      const remainingAmount = Number(liability?.remainingAmount) || 0;
       if (amount > remainingAmount) {
         throw new Error('Payment amount cannot exceed remaining balance');
       }
       
       onSubmit({
-        amount,
+        amount: toNumber(amount),
         description: data.description || `Payment for ${liability?.name}`,
         createTransaction: data.createTransaction,
       });
     } catch (error: any) {
       console.error('Error processing payment:', error);
-      // Handle error display here if needed
+      setError(error.message || 'Failed to process payment');
     } finally {
       setIsSubmitting(false);
     }

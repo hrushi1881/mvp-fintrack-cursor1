@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CreditCard, Calendar, Percent, TrendingDown, Plus, Edit3, Trash2, BarChart3, Calculator, Info, AlertTriangle, ShoppingCart } from 'lucide-react';
+import { CreditCard, Calendar, Percent, TrendingDown, Plus, Edit3, Trash2, BarChart3, Calculator, Info, AlertTriangle, ShoppingCart, CheckCircle } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { toNumber, calculatePercentage, sanitizeFinancialData } from '../utils/validation';
 import { TopNavigation } from '../components/layout/TopNavigation';
@@ -199,9 +199,13 @@ export const Liabilities: React.FC = () => {
   };
 
   const getEstimatedPayoff = (liability: any) => {
-    if (liability.remainingAmount <= 0) return 'Paid Off';
+    const remainingAmount = toNumber(liability.remainingAmount);
+    const monthlyPayment = toNumber(liability.monthlyPayment);
     
-    const monthsRemaining = Math.ceil(liability.remainingAmount / liability.monthlyPayment);
+    if (remainingAmount <= 0) return 'Paid Off';
+    if (monthlyPayment <= 0) return 'No Payment Set';
+    
+    const monthsRemaining = Math.ceil(remainingAmount / monthlyPayment);
     return `${monthsRemaining} months`;
   };
 
@@ -213,7 +217,30 @@ export const Liabilities: React.FC = () => {
 
   const getDaysUntilDue = (dueDate: Date) => {
     const today = new Date();
-    return differenceInDays(dueDate, today);
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate);
+    due.setHours(0, 0, 0, 0);
+    return differenceInDays(due, today);
+  };
+
+  // Get liability status
+  const getLiabilityStatus = (liability: any) => {
+    const remainingAmount = toNumber(liability.remainingAmount);
+    const daysUntilDue = getDaysUntilDue(liability.due_date);
+    
+    if (remainingAmount <= 0) {
+      return { status: 'paid_off', color: 'success', label: '✅ Paid Off' };
+    }
+    
+    if (daysUntilDue < 0) {
+      return { status: 'overdue', color: 'error', label: '⚠️ Overdue' };
+    }
+    
+    if (daysUntilDue <= 7) {
+      return { status: 'due_soon', color: 'warning', label: `⏰ Due in ${daysUntilDue} days` };
+    }
+    
+    return { status: 'current', color: 'primary', label: '📅 Current' };
   };
 
   // Find linked purchase transaction for a liability
@@ -311,6 +338,7 @@ export const Liabilities: React.FC = () => {
               const estimatedPayoff = getEstimatedPayoff(liability);
               const TypeIcon = getTypeIcon(liability.type);
               const daysUntilDue = getDaysUntilDue(liability.due_date);
+              const liabilityStatus = getLiabilityStatus(liability);
               const linkedPurchase = getLinkedPurchase(liability);
               
               return (
@@ -440,17 +468,36 @@ export const Liabilities: React.FC = () => {
                     <p className="font-semibold text-white text-sm sm:text-base">{estimatedPayoff}</p>
                   </div>
 
-                  {/* Action Button */}
-                  <Button
-                    onClick={() => {
-                      setSelectedLiability(liability.id);
-                      setShowPaymentModal(true);
-                    }}
-                    className="w-full text-sm"
-                    size="sm"
-                  >
-                    Make Payment
-                  </Button>
+                  {/* Status Badge */}
+                  <div className={`text-center py-2 sm:py-3 rounded-xl border ${
+                    liabilityStatus.status === 'paid_off' ? 'bg-success-500/20 border-success-500/30' :
+                    liabilityStatus.status === 'overdue' ? 'bg-error-500/20 border-error-500/30' :
+                    liabilityStatus.status === 'due_soon' ? 'bg-warning-500/20 border-warning-500/30' :
+                    'bg-primary-500/20 border-primary-500/30'
+                  }`}>
+                    <span className={`font-medium text-sm ${
+                      liabilityStatus.status === 'paid_off' ? 'text-success-400' :
+                      liabilityStatus.status === 'overdue' ? 'text-error-400' :
+                      liabilityStatus.status === 'due_soon' ? 'text-warning-400' :
+                      'text-primary-400'
+                    }`}>
+                      {liabilityStatus.label}
+                    </span>
+                  </div>
+
+                  {/* Action Button - Only show if not paid off */}
+                  {remainingAmount > 0 && (
+                    <Button
+                      onClick={() => {
+                        setSelectedLiability(liability.id);
+                        setShowPaymentModal(true);
+                      }}
+                      className="w-full text-sm mt-3"
+                      size="sm"
+                    >
+                      Make Payment
+                    </Button>
+                  )}
                 </div>
               );
             })}
@@ -458,7 +505,7 @@ export const Liabilities: React.FC = () => {
         )}
 
         {/* Educational Info */}
-        {liabilities.length > 0 && (
+        {liabilities.filter(l => toNumber(l.remainingAmount) > 0).length > 0 && (
           <div className="mt-6 bg-blue-500/20 rounded-lg p-4 border border-blue-500/30">
             <div className="flex items-start space-x-3">
               <Info size={18} className="text-blue-400 mt-0.5" />
@@ -470,6 +517,22 @@ export const Liabilities: React.FC = () => {
                   <li>Consider making extra payments when possible</li>
                   <li>Set up automatic payments to avoid late fees</li>
                 </ul>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Paid Off Debts Summary */}
+        {liabilities.filter(l => toNumber(l.remainingAmount) <= 0).length > 0 && (
+          <div className="mt-6 bg-success-500/20 rounded-lg p-4 border border-success-500/30">
+            <div className="flex items-start space-x-3">
+              <CheckCircle size={18} className="text-success-400 mt-0.5" />
+              <div>
+                <h4 className="font-medium text-success-400 mb-1">Congratulations!</h4>
+                <p className="text-sm text-success-300">
+                  You've paid off {liabilities.filter(l => toNumber(l.remainingAmount) <= 0).length} debt(s). 
+                  Keep up the great work on your financial journey!
+                </p>
               </div>
             </div>
           </div>

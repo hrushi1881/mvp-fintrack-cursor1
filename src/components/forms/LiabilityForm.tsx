@@ -90,6 +90,23 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
       // For purchase type, addAsIncome should always be false
       const effectiveAddAsIncome = selectedType === 'purchase' ? false : addAsIncome;
       
+      // Validate business logic
+      const totalAmt = toNumber(validatedData.totalAmount);
+      const remainingAmt = toNumber(validatedData.remainingAmount);
+      const monthlyPmt = toNumber(validatedData.monthlyPayment);
+      
+      if (remainingAmt > totalAmt) {
+        throw new Error("Remaining amount cannot exceed total amount");
+      }
+      
+      if (monthlyPmt <= 0) {
+        throw new Error("Monthly payment must be greater than zero");
+      }
+      
+      if (remainingAmt > 0 && monthlyPmt > remainingAmt) {
+        throw new Error("Monthly payment cannot exceed remaining balance");
+      }
+      
       await onSubmit({
         ...validatedData,
         due_date: new Date(data.due_date),

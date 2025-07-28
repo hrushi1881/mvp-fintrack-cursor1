@@ -213,6 +213,37 @@ export const Goals: React.FC = () => {
     }
   };
 
+  // Get goal status
+  const getGoalStatus = (goal: any) => {
+    const currentAmount = toNumber(goal.currentAmount);
+    const targetAmount = toNumber(goal.targetAmount);
+    const progress = calculatePercentage(currentAmount, targetAmount);
+    const isCompleted = progress >= 100;
+    const isEmergencyFund = goal.category.toLowerCase() === 'emergency';
+    
+    if (isCompleted) {
+      return { status: 'completed', color: 'success', label: '🎉 Goal Completed!' };
+    }
+    
+    if (isEmergencyFund && currentAmount > 0) {
+      return { status: 'emergency_ready', color: 'warning', label: '💰 Emergency fund ready' };
+    }
+    
+    if (progress >= 75) {
+      return { status: 'almost_there', color: 'primary', label: '🎯 Almost there!' };
+    }
+    
+    if (progress >= 50) {
+      return { status: 'halfway', color: 'primary', label: '📈 Halfway there!' };
+    }
+    
+    if (progress >= 25) {
+      return { status: 'good_start', color: 'primary', label: '🌱 Good start!' };
+    }
+    
+    return { status: 'just_started', color: 'gray', label: '🚀 Let\'s get started!' };
+  };
+
   return (
     <div className="min-h-screen text-white pb-20">
       <TopNavigation 
@@ -254,6 +285,7 @@ export const Goals: React.FC = () => {
               const progress = calculatePercentage(currentAmount, targetAmount);
               const isCompleted = progress >= 100;
               const isEmergencyFund = goal.category.toLowerCase() === 'emergency';
+              const goalStatus = getGoalStatus(goal);
               const estimatedCompletion = getEstimatedCompletion(goal);
               
               return (
@@ -355,16 +387,26 @@ export const Goals: React.FC = () => {
                   </div>
 
                   {/* Status/Action Section */}
-                  {isCompleted ? (
-                    <div className="text-center py-2 sm:py-3 bg-green-500/20 rounded-xl border border-green-500/30">
-                      <span className="text-green-400 font-medium text-sm">🎉 Goal Completed!</span>
-                    </div>
-                  ) : isEmergencyFund && (Number(goal.currentAmount) || 0) > 0 ? (
-                    <div className="text-center py-2 sm:py-3 bg-red-500/20 rounded-xl border border-red-500/30">
-                      <span className="text-red-400 font-medium text-sm">💰 Emergency fund ready for use</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                  {/* Status Badge */}
+                  <div className={`text-center py-2 sm:py-3 rounded-xl border ${
+                    goalStatus.status === 'completed' ? 'bg-success-500/20 border-success-500/30' :
+                    goalStatus.status === 'emergency_ready' ? 'bg-warning-500/20 border-warning-500/30' :
+                    goalStatus.color === 'primary' ? 'bg-primary-500/20 border-primary-500/30' :
+                    'bg-gray-500/20 border-gray-500/30'
+                  }`}>
+                    <span className={`font-medium text-sm ${
+                      goalStatus.status === 'completed' ? 'text-success-400' :
+                      goalStatus.status === 'emergency_ready' ? 'text-warning-400' :
+                      goalStatus.color === 'primary' ? 'text-primary-400' :
+                      'text-gray-400'
+                    }`}>
+                      {goalStatus.label}
+                    </span>
+                  </div>
+
+                  {/* Action Buttons - Only show if not completed */}
+                  {!isCompleted && (
+                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mt-3">
                       <Button
                         size="sm"
                         variant="outline"
@@ -391,6 +433,21 @@ export const Goals: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+        {/* Completed Goals Summary */}
+        {goals.filter(g => calculatePercentage(toNumber(g.currentAmount), toNumber(g.targetAmount)) >= 100).length > 0 && (
+          <div className="mt-6 bg-success-500/20 rounded-lg p-4 border border-success-500/30">
+            <div className="flex items-start space-x-3">
+              <CheckCircle size={18} className="text-success-400 mt-0.5" />
+              <div>
+                <h4 className="font-medium text-success-400 mb-1">Achievements Unlocked!</h4>
+                <p className="text-sm text-success-300">
+                  You've completed {goals.filter(g => calculatePercentage(toNumber(g.currentAmount), toNumber(g.targetAmount)) >= 100).length} goal(s). 
+                  Excellent work on reaching your financial milestones!
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>
