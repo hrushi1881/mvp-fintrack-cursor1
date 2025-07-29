@@ -820,10 +820,13 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
   // Helper function to update budget spent amount
   const updateBudgetSpent = async (category: string, amount: number) => {
     const budget = budgets.find(b => b.category === category);
-    if (budget) {
-      const newSpent = toNumber(budget.spent) + toNumber(amount);
-      await updateBudget(budget.id, { spent: newSpent });
+    if (!budget) {
+      console.warn(`Budget category "${category}" not found. Skipping budget update.`);
+      return;
     }
+    
+    const newSpent = toNumber(budget.spent) + toNumber(amount);
+    await updateBudget(budget.id, { spent: newSpent });
   };
 
   // Recurring transaction operations
@@ -1110,32 +1113,41 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       }
     });
 
-    const debtPlans = sortedDebts.map((debt, index) => {
+    // Enhanced calculation with dynamic extra payment redistribution
+    const debtPlans = [];
+    let remainingExtraPayment = toNumber(extraPayment);
+    let currentDate = new Date();
+    
+    for (let i = 0; i < sortedDebts.length; i++) {
+      const debt = sortedDebts[i];
       const remainingAmount = toNumber(debt.remainingAmount);
-      const monthlyPayment = toNumber(debt.monthlyPayment) + (index === 0 ? toNumber(extraPayment) : 0);
+      const baseMonthlyPayment = toNumber(debt.monthlyPayment);
+      const currentExtraPayment = i === 0 ? remainingExtraPayment : 0; // Apply extra to current priority debt
+      const totalMonthlyPayment = baseMonthlyPayment + currentExtraPayment;
       const interestRate = toNumber(debt.interestRate) / 100 / 12;
       
-      if (monthlyPayment <= 0 || remainingAmount <= 0) {
-        return {
+      if (totalMonthlyPayment <= 0 || remainingAmount <= 0) {
+        debtPlans.push({
           id: debt.id,
           name: debt.name,
           remainingAmount,
           interestRate: toNumber(debt.interestRate),
-          monthlyPayment,
+          monthlyPayment: totalMonthlyPayment,
           payoffDate: new Date(),
           totalInterest: 0,
           payments: []
-        };
+        });
+        continue;
       }
 
       let balance = remainingAmount;
       let totalInterest = 0;
       const payments = [];
-      let currentDate = new Date();
+      let monthDate = new Date(currentDate);
 
       while (balance > 0.01 && payments.length < 600) { // Cap at 50 years
         const interestPayment = balance * interestRate;
-        const principalPayment = Math.min(monthlyPayment - interestPayment, balance);
+        const principalPayment = Math.min(totalMonthlyPayment - interestPayment, balance);
         
         if (principalPayment <= 0) break;
         
@@ -1143,27 +1155,32 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
         totalInterest += interestPayment;
         
         payments.push({
-          date: new Date(currentDate),
-          payment: monthlyPayment,
+          date: new Date(monthDate),
+          payment: totalMonthlyPayment,
           principal: principalPayment,
           interest: interestPayment,
           remainingBalance: balance
         });
         
-        currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, currentDate.getDate());
+        monthDate = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, monthDate.getDate());
       }
 
-      return {
+      debtPlans.push({
         id: debt.id,
         name: debt.name,
         remainingAmount,
         interestRate: toNumber(debt.interestRate),
-        monthlyPayment,
+        monthlyPayment: totalMonthlyPayment,
         payoffDate: payments.length > 0 ? payments[payments.length - 1].date : new Date(),
         totalInterest,
         payments
-      };
-    });
+      });
+      
+      // When this debt is paid off, redistribute extra payment to next debt
+      if (balance <= 0.01 && i < sortedDebts.length - 1) {
+        remainingExtraPayment += baseMonthlyPayment; // Add this debt's payment to extra for next debt
+      }
+    }
 
     const totalMonths = Math.max(...debtPlans.map(plan => plan.payments.length));
     const totalInterestPaid = debtPlans.reduce((sum, plan) => sum + plan.totalInterest, 0);

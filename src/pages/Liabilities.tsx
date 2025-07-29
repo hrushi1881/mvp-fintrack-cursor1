@@ -16,6 +16,8 @@ import { DebtStrategyTool } from '../components/liabilities/DebtStrategyTool';
 export const Liabilities: React.FC = () => {
   const { liabilities, addLiability, updateLiability, deleteLiability, addTransaction, transactions } = useFinance();
   const { currency, formatCurrency } = useInternationalization();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedLiability, setSelectedLiability] = useState<string | null>(null);
@@ -24,7 +26,6 @@ export const Liabilities: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [liabilityToDelete, setLiabilityToDelete] = useState<string | null>(null);
   const [showStrategyTool, setShowStrategyTool] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleAddLiability = async (liability: any, addAsIncome: boolean) => {
     try {
@@ -38,6 +39,28 @@ export const Liabilities: React.FC = () => {
         'interestRate', 
         'monthlyPayment'
       ]);
+      
+      // Validate business logic
+      const totalAmt = toNumber(sanitizedLiability.totalAmount);
+      const remainingAmt = toNumber(sanitizedLiability.remainingAmount);
+      const monthlyPmt = toNumber(sanitizedLiability.monthlyPayment);
+      
+      if (remainingAmt > totalAmt) {
+        throw new Error("Remaining amount cannot exceed total amount");
+      }
+      
+      if (monthlyPmt <= 0) {
+        throw new Error("Monthly payment must be greater than zero");
+      }
+      
+      // Warn about loan without income tracking
+      if (sanitizedLiability.type === 'loan' && !addAsIncome) {
+        const confirmed = window.confirm('No income record will be created for this loan. Your cash flow data may be incomplete. Continue?');
+        if (!confirmed) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
       
       // Add the liability first
       await addLiability(sanitizedLiability);
@@ -60,6 +83,11 @@ export const Liabilities: React.FC = () => {
       }
       
       setShowModal(false);
+      setError(null);
+      // Show success message
+      setTimeout(() => {
+        alert('Liability added successfully!');
+      }, 100);
     } catch (error: any) {
       console.error('Error adding liability:', error);
       setError(error.message || 'Failed to add liability');
@@ -81,10 +109,28 @@ export const Liabilities: React.FC = () => {
         'monthlyPayment'
       ]);
       
+      // Validate business logic
+      const totalAmt = toNumber(sanitizedLiability.totalAmount);
+      const remainingAmt = toNumber(sanitizedLiability.remainingAmount);
+      const monthlyPmt = toNumber(sanitizedLiability.monthlyPayment);
+      
+      if (remainingAmt > totalAmt) {
+        throw new Error("Remaining amount cannot exceed total amount");
+      }
+      
+      if (monthlyPmt <= 0) {
+        throw new Error("Monthly payment must be greater than zero");
+      }
+      
       if (editingLiability) {
         await updateLiability(editingLiability.id, sanitizedLiability);
         setEditingLiability(null);
         setShowEditModal(false);
+        setError(null);
+        // Show success message
+        setTimeout(() => {
+          alert('Liability updated successfully!');
+        }, 100);
       }
     } catch (error: any) {
       console.error('Error updating liability:', error);
@@ -105,9 +151,21 @@ export const Liabilities: React.FC = () => {
       setError(null);
       
       if (liabilityToDelete) {
+        // Find and delete any linked transactions
+        const liability = liabilities.find(l => l.id === liabilityToDelete);
+        if (liability && liability.linkedPurchaseId) {
+          // Note: In a real app, you might want to unlink rather than delete the purchase
+          console.log(`Unlinking purchase transaction: ${liability.linkedPurchaseId}`);
+        }
+        
         await deleteLiability(liabilityToDelete);
         setLiabilityToDelete(null);
         setShowDeleteConfirm(false);
+        setError(null);
+        // Show success message
+        setTimeout(() => {
+          alert('Liability deleted successfully!');
+        }, 100);
       }
     } catch (error: any) {
       console.error('Error deleting liability:', error);
@@ -117,24 +175,33 @@ export const Liabilities: React.FC = () => {
     }
   };
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleMakePayment = async (paymentData: { amount: number; description: string; createTransaction: boolean }) => {
-    setError(null);
     const liability = liabilities.find(l => l.id === selectedLiability);
     if (!liability) return;
 
     try {
       setIsSubmitting(true);
+      setError(null);
       
       const paymentAmount = Number(paymentData.amount) || 0;
       const currentRemaining = Number(liability.remainingAmount) || 0;
+      
+      // Handle overpayment
+      const actualPayment = Math.min(paymentAmount, currentRemaining);
+      if (paymentAmount > currentRemaining) {
+        const confirmed = window.confirm(`Payment of ${formatCurrency(paymentAmount)} exceeds remaining balance of ${formatCurrency(currentRemaining)}. Adjust to full payoff amount?`);
+        if (!confirmed) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
       
       // Add payment as expense transaction if createTransaction is true
       if (paymentData.createTransaction) {
         await addTransaction({
           type: 'expense',
-          amount: toNumber(paymentAmount),
+          amount: toNumber(actualPayment),
           category: 'Debt Payment',
           description: paymentData.description || `Payment for ${liability.name}`,
           date: new Date(),
@@ -143,20 +210,22 @@ export const Liabilities: React.FC = () => {
 
       // Update liability remaining amount
       await updateLiability(selectedLiability!, {
-        remainingAmount: Math.max(0, toNumber(currentRemaining) - toNumber(paymentAmount))
+        remainingAmount: Math.max(0, toNumber(currentRemaining) - toNumber(actualPayment))
       });
 
+      // Show success message
+      setTimeout(() => {
+        alert(`Payment of ${formatCurrency(actualPayment)} processed successfully!`);
+      }, 100);
+      
+      setShowPaymentModal(false);
+      setSelectedLiability(null);
+      setError(null);
     } catch (error: any) {
       console.error('Error making payment:', error);
       setError(error.message || 'Failed to process payment');
     } finally {
       setIsSubmitting(false);
-      
-      // Only close modal if no error occurred
-      if (!error) {
-        setShowPaymentModal(false);
-        setSelectedLiability(null);
-      }
     }
   };
 
@@ -203,10 +272,10 @@ export const Liabilities: React.FC = () => {
     const monthlyPayment = toNumber(liability.monthlyPayment);
     
     if (remainingAmount <= 0) return 'Paid Off';
-    if (monthlyPayment <= 0) return 'No Payment Set';
+    if (!monthlyPayment || monthlyPayment <= 0) return 'No Payment Set';
     
     const monthsRemaining = Math.ceil(remainingAmount / monthlyPayment);
-    return `${monthsRemaining} months`;
+    return `${monthsRemaining} month${monthsRemaining !== 1 ? 's' : ''}`;
   };
 
   const getAPRBadgeColor = (rate: number) => {
@@ -236,6 +305,10 @@ export const Liabilities: React.FC = () => {
       return { status: 'overdue', color: 'error', label: '⚠️ Overdue' };
     }
     
+    if (daysUntilDue === 0) {
+      return { status: 'due_today', color: 'error', label: '🚨 Due Today' };
+    }
+    
     if (daysUntilDue <= 7) {
       return { status: 'due_soon', color: 'warning', label: `⏰ Due in ${daysUntilDue} days` };
     }
@@ -256,8 +329,8 @@ export const Liabilities: React.FC = () => {
     remainingAmount: editingLiability.remainingAmount,
     interestRate: editingLiability.interestRate,
     monthlyPayment: editingLiability.monthlyPayment,
-    due_date: editingLiability.due_date.toISOString().split('T')[0],
-    start_date: editingLiability.start_date.toISOString().split('T')[0],
+    due_date: editingLiability.due_date,
+    start_date: editingLiability.start_date,
     linkedPurchaseId: editingLiability.linkedPurchaseId
   } : null;
 
@@ -389,14 +462,25 @@ export const Liabilities: React.FC = () => {
 
                   {/* Linked Purchase Info (if applicable) */}
                   {liability.type === 'purchase' && linkedPurchase && (
-                    <div className="mb-4 p-3 bg-purple-500/20 rounded-lg border border-purple-500/30">
-                      <div className="flex items-center space-x-2">
-                        <ShoppingCart size={14} className="text-purple-400" />
-                        <p className="text-xs text-purple-300">
-                          Linked to purchase: {linkedPurchase.description}
-                        </p>
+                    linkedPurchase ? (
+                      <div className="mb-4 p-3 bg-purple-500/20 rounded-lg border border-purple-500/30">
+                        <div className="flex items-center space-x-2">
+                          <ShoppingCart size={14} className="text-purple-400" />
+                          <p className="text-xs text-purple-300">
+                            Linked to purchase: {linkedPurchase.description}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="mb-4 p-3 bg-warning-500/20 rounded-lg border border-warning-500/30">
+                        <div className="flex items-center space-x-2">
+                          <AlertTriangle size={14} className="text-warning-400" />
+                          <p className="text-xs text-warning-300">
+                            Purchase link missing - transaction may have been deleted
+                          </p>
+                        </div>
+                      </div>
+                    )
                   )}
 
                   {/* Amount Section */}

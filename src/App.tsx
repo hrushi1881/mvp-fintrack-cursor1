@@ -9,6 +9,7 @@ import { LoadingSpinner } from './components/common/LoadingSpinner';
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 import { AiFinancialAssistant } from './components/dashboard/AiFinancialAssistant';
 import Silk from './components/background/Silk';
+import { ToastProvider } from './components/common/Toast';
 import { Dashboard } from './pages/Dashboard';
 import { Calendar } from './pages/Calendar';
 import { Analytics } from './pages/Analytics';
@@ -292,17 +293,19 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <Router>
-        <AuthProvider>
-          <InternationalizationProvider>
-            <CurrencyConversionProvider>
-              <FinanceProvider>
-                <AppContent />
-              </FinanceProvider>
-            </CurrencyConversionProvider>
-          </InternationalizationProvider>
-        </AuthProvider>
-      </Router>
+      <ToastProvider>
+        <Router>
+          <AuthProvider>
+            <InternationalizationProvider>
+              <CurrencyConversionProvider>
+                <FinanceProvider>
+                  <AppContent />
+                </FinanceProvider>
+              </CurrencyConversionProvider>
+            </InternationalizationProvider>
+          </AuthProvider>
+        </Router>
+      </ToastProvider>
     </ErrorBoundary>
   );
 };

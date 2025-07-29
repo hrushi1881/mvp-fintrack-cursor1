@@ -90,27 +90,10 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
       // For purchase type, addAsIncome should always be false
       const effectiveAddAsIncome = selectedType === 'purchase' ? false : addAsIncome;
       
-      // Validate business logic
-      const totalAmt = toNumber(validatedData.totalAmount);
-      const remainingAmt = toNumber(validatedData.remainingAmount);
-      const monthlyPmt = toNumber(validatedData.monthlyPayment);
-      
-      if (remainingAmt > totalAmt) {
-        throw new Error("Remaining amount cannot exceed total amount");
-      }
-      
-      if (monthlyPmt <= 0) {
-        throw new Error("Monthly payment must be greater than zero");
-      }
-      
-      if (remainingAmt > 0 && monthlyPmt > remainingAmt) {
-        throw new Error("Monthly payment cannot exceed remaining balance");
-      }
-      
       await onSubmit({
         ...validatedData,
-        due_date: new Date(data.due_date),
-        start_date: new Date(data.start_date),
+        due_date: typeof data.due_date === 'string' ? new Date(data.due_date) : data.due_date,
+        start_date: typeof data.start_date === 'string' ? new Date(data.start_date) : data.start_date,
         linkedPurchaseId: data.linkedPurchaseId || undefined,
       }, effectiveAddAsIncome);
       
@@ -284,6 +267,7 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
           {...register('start_date', { required: 'Start date is required' })}
           error={errors.start_date?.message}
           className="bg-black/40 border-white/20 text-white"
+          value={typeof initialData?.start_date === 'string' ? initialData.start_date : initialData?.start_date?.toISOString().split('T')[0]}
           helpText="When did you take on this debt?"
         />
       </div>
@@ -395,8 +379,15 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
           {...register('due_date', { required: 'Due date is required' })}
           error={errors.due_date?.message}
           className="bg-black/40 border-white/20 text-white"
+          value={typeof initialData?.due_date === 'string' ? initialData.due_date : initialData?.due_date?.toISOString().split('T')[0]}
           helpText="When is your next payment due?"
         />
+        {/* Warn about past due dates */}
+        {watch('due_date') && new Date(watch('due_date')) < new Date() && (
+          <div className="mt-2 p-2 bg-warning-500/20 border border-warning-500/30 rounded text-xs text-warning-400">
+            ⚠️ Due date is in the past. This is okay for historical debts.
+          </div>
+        )}
       </div>
 
       {/* Payment Summary */}

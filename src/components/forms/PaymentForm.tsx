@@ -69,8 +69,15 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
         throw new Error('Payment amount must be greater than 0');
       }
       
-      if (amount > remainingAmount) {
-        throw new Error('Payment amount cannot exceed remaining balance');
+      // Handle overpayment with user confirmation
+      if (amount > remainingAmount && remainingAmount > 0) {
+        const confirmed = window.confirm(`Payment of ${formatCurrency(amount)} exceeds remaining balance of ${formatCurrency(remainingAmount)}. Adjust to full payoff amount?`);
+        if (!confirmed) {
+          setIsSubmitting(false);
+          return;
+        }
+        // Adjust amount to remaining balance
+        data.amount = remainingAmount;
       }
       
       onSubmit({
@@ -81,8 +88,9 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
     } catch (error: any) {
       console.error('Error processing payment:', error);
       setError(error.message || 'Failed to process payment');
-    } finally {
       setIsSubmitting(false);
+    } finally {
+      // Don't reset here as parent handles it
     }
   };
 
