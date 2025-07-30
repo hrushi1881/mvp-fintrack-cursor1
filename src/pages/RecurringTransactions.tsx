@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Repeat, Plus, Play, Pause, Edit3, Trash2, Calendar, DollarSign, Clock } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, addYears } from 'date-fns';
+import { useQueryClient } from '@tanstack/react-query';
 import { TopNavigation } from '../components/layout/TopNavigation';
 import { Modal } from '../components/common/Modal';
 import { RecurringTransactionForm } from '../components/forms/RecurringTransactionForm';
@@ -8,6 +9,7 @@ import { Button } from '../components/common/Button';
 import { useFinance } from '../contexts/FinanceContext';
 
 export const RecurringTransactions: React.FC = () => {
+  const queryClient = useQueryClient();
   const { 
     recurringTransactions, 
     addRecurringTransaction, 
@@ -19,25 +21,53 @@ export const RecurringTransactions: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<string | null>(null);
 
   const handleAddRecurringTransaction = (data: any) => {
-    addRecurringTransaction(data);
-    setShowModal(false);
+    try {
+      await addRecurringTransaction(data);
+      setShowModal(false);
+      
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
+    } catch (error) {
+      console.error('Error adding recurring transaction:', error);
+    }
   };
 
   const handleEditRecurringTransaction = (data: any) => {
-    if (editingTransaction) {
-      updateRecurringTransaction(editingTransaction, data);
-      setEditingTransaction(null);
-      setShowModal(false);
+    try {
+      if (editingTransaction) {
+        await updateRecurringTransaction(editingTransaction, data);
+        setEditingTransaction(null);
+        setShowModal(false);
+        
+        // Invalidate related queries
+        queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
+      }
+    } catch (error) {
+      console.error('Error updating recurring transaction:', error);
     }
   };
 
   const handleToggleActive = (id: string, isActive: boolean) => {
-    updateRecurringTransaction(id, { isActive: !isActive });
+    try {
+      await updateRecurringTransaction(id, { isActive: !isActive });
+      
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
+    } catch (error) {
+      console.error('Error toggling recurring transaction:', error);
+    }
   };
 
   const handleDelete = (id: string) => {
     if (confirm('Are you sure you want to delete this recurring transaction?')) {
-      deleteRecurringTransaction(id);
+      try {
+        await deleteRecurringTransaction(id);
+        
+        // Invalidate related queries
+        queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
+      } catch (error) {
+        console.error('Error deleting recurring transaction:', error);
+      }
     }
   };
 

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { ArrowLeft, Edit3, Trash2, Search, Filter, Calendar, Tag, TrendingUp, TrendingDown, Plus, Minus, Eye, EyeOff, CheckSquare, Square, Scissors } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Modal } from '../components/common/Modal';
 import { TransactionForm } from '../components/forms/TransactionForm';
 import { Button } from '../components/common/Button';
@@ -11,6 +12,7 @@ import { useFinance } from '../contexts/FinanceContext';
 import { useInternationalization } from '../contexts/InternationalizationContext';
 import { CurrencyIcon } from '../components/common/CurrencyIcon';
 import { Transaction } from '../types';
+import { useSupabaseQuery, usePaginatedQuery } from '../hooks/useSupabaseQuery';
 
 interface TransactionFilters {
   search: string;
@@ -28,7 +30,7 @@ interface TransactionFilters {
 
 export const TransactionHistory: React.FC = () => {
   const navigate = useNavigate();
-  const { transactions, addTransaction, deleteTransaction, updateTransaction, stats, userCategories, getSplitTransactions } = useFinance();
+  const { addTransaction, deleteTransaction, updateTransaction, stats, userCategories, getSplitTransactions, getTransactionsPaginated, searchTransactions } = useFinance();
   const { formatCurrency, currency } = useInternationalization();
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -39,6 +41,10 @@ export const TransactionHistory: React.FC = () => {
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(0);
+  const pageSize = 20;
+  
   const [filters, setFilters] = useState<TransactionFilters>({
     search: '',
     type: 'all',
@@ -47,15 +53,41 @@ export const TransactionHistory: React.FC = () => {
     amountRange: { min: '', max: '' }
   });
 
-  // Get unique categories for filter dropdown
-  const categories = useMemo(() => {
-    const uniqueCategories = new Set(transactions.map(t => t.category));
-    return Array.from(uniqueCategories).sort();
-  }, [transactions]);
+  // Use paginated query for transactions
+  const {
+    data: paginatedData,
+    isLoading,
+    error,
+    page,
+    setPage,
+    hasNextPage,
+    hasPreviousPage
+  } = usePaginatedQuery(
+    ['transactions'],
+    (page, pageSize) => getTransactionsPaginated(page, pageSize, filters),
+    pageSize
+  );
+
+  const transactions = paginatedData?.data || [];
+  const totalCount = paginatedData?.count || 0;
+
+  // Search query for filtered results
+  const { data: searchResults, isLoading: isSearching } = useQuery({
+    queryKey: ['search-transactions', filters],
+    queryFn: () => {
+      if (hasActiveFilters) {
+        return searchTransactions('', filters);
+      }
+      return Promise.resolve([]);
+    },
+    enabled: hasActiveFilters
+  });
 
   // Filter transactions based on current filters
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(transaction => {
+    const transactionsToFilter = hasActiveFilters ? (searchResults || []) : transactions;
+    
+    return transactionsToFilter.filter(transaction => {
       // Skip child transactions (they'll be shown with their parent)
       if (transaction.parentTransactionId) return false;
       
@@ -99,8 +131,13 @@ export const TransactionHistory: React.FC = () => {
 
       return true;
     });
-  }, [transactions, filters]);
+  }, [transactions, searchResults, filters, hasActiveFilters]);
 
+  // Get unique categories for filter dropdown
+  const categories = useMemo(() => {
+    const uniqueCategories = new Set(userCategories.map(c => c.name));
+    return Array.from(uniqueCategories).sort();
+  }, [userCategories]);
   // Group transactions by date
   const groupedTransactions = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
@@ -235,6 +272,11 @@ export const TransactionHistory: React.FC = () => {
                           filters.dateRange.start || filters.dateRange.end || 
                           filters.amountRange.min || filters.amountRange.max;
 
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [filters, setPage]);
+
   return (
     <div className="min-h-screen text-white pb-20">
       {/* Collapsible Header */}
@@ -309,7 +351,7 @@ export const TransactionHistory: React.FC = () => {
               <p className={`text-sm sm:text-base font-bold ${
                 filteredTotals.net >= 0 ? 'text-success-400' : 'text-error-400'
               }`}>
-                {filteredTotals.net >= 0 ? '+' : ''}{formatCurrency(filteredTotals.net)}
+                {isLoading ? 'Loading...' : `${filteredTransactions.length} of ${totalCount} transactions`}
               </p>
             </div>
           </div>
@@ -490,7 +532,23 @@ export const TransactionHistory: React.FC = () => {
         )}
 
         {/* Transaction Groups */}
-        {groupedTransactions.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500 mx-auto mb-4"></div>
+            <p className="text-gray-400">Loading transactions...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-error-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle size={24} className="text-error-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-2">Error Loading Transactions</h3>
+            <p className="text-gray-400 mb-4">Failed to load transaction data</p>
+            <Button onClick={() => window.location.reload()} variant="outline" size="sm">
+              Retry
+            </Button>
+          </div>
+        ) : groupedTransactions.length === 0 ? (
           <div className="text-center py-12">
             <div className="w-16 h-16 bg-gray-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <Search size={24} className="text-gray-500" />
@@ -506,6 +564,37 @@ export const TransactionHistory: React.FC = () => {
             )}
           </div>
         ) : (
+
+        {/* Pagination Controls */}
+        {!hasActiveFilters && totalCount > pageSize && (
+          <div className="flex items-center justify-between mt-6 p-4 bg-black/20 backdrop-blur-md rounded-xl border border-white/10">
+            <div className="flex items-center space-x-2">
+              <Button
+                onClick={() => setPage(Math.max(0, page - 1))}
+                disabled={!hasPreviousPage || isLoading}
+                variant="outline"
+                size="sm"
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-gray-400">
+                Page {page + 1} of {Math.ceil(totalCount / pageSize)}
+              </span>
+              <Button
+                onClick={() => setPage(page + 1)}
+                disabled={!hasNextPage || isLoading}
+                variant="outline"
+                size="sm"
+              >
+                Next
+              </Button>
+            </div>
+            
+            <div className="text-xs text-gray-500">
+              Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, totalCount)} of {totalCount}
+            </div>
+          </div>
+        )}
           <div className="space-y-4">
             {groupedTransactions.map(({ date, transactions: dayTransactions }) => {
               const dayTotals = getDayTotals(dayTransactions);

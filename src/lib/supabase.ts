@@ -1,9 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../types/supabase';
 
-// Use environment variables or fallback to the provided credentials
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://qbskidyauxehvswgckrv.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFic2tpZHlhdXhlaHZzd2dja3J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5MzA3NDgsImV4cCI6MjA2NjUwNjc0OH0.A2C-1fRXKwLhA9yt6CyQq1BqfjpQ3J46zuHlwjnWBE4';
+// Secure environment variable handling
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please check your .env file.');
+}
 
 console.log('Initializing Supabase client with URL:', supabaseUrl);
 
@@ -12,5 +16,22 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
+  },
+  db: {
+    schema: 'public'
+  },
+  global: {
+    headers: {
+      'x-client-info': 'fintrack-app'
+    }
   }
 });
+
+// Performance monitoring
+export const logQueryPerformance = (operation: string, startTime: number) => {
+  const duration = Date.now() - startTime;
+  if (duration > 1000) {
+    console.warn(`Slow Supabase query: ${operation} took ${duration}ms`);
+  }
+  return duration;
+};

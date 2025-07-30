@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Tag, Plus, Edit3, Trash2, Check, X, AlertCircle, Info, Minus } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { useFinance } from '../../contexts/FinanceContext';
@@ -14,6 +15,7 @@ interface CategoryFormData {
 }
 
 export const CategoryManagement: React.FC = () => {
+  const queryClient = useQueryClient();
   const { userCategories, addUserCategory, updateUserCategory, deleteUserCategory } = useFinance();
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -48,9 +50,12 @@ export const CategoryManagement: React.FC = () => {
   const handleAddCategory = (data: CategoryFormData) => {
     try {
       setError(null);
-      addUserCategory(data);
+      await addUserCategory(data);
       setShowAddForm(false);
       reset();
+      
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
     } catch (error: any) {
       setError(error.message || 'Failed to add category');
     }
@@ -61,9 +66,12 @@ export const CategoryManagement: React.FC = () => {
     
     try {
       setError(null);
-      updateUserCategory(editingCategoryId, data);
+      await updateUserCategory(editingCategoryId, data);
       setEditingCategoryId(null);
       reset();
+      
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
     } catch (error: any) {
       setError(error.message || 'Failed to update category');
     }
@@ -73,6 +81,9 @@ export const CategoryManagement: React.FC = () => {
     try {
       setError(null);
       await deleteUserCategory(id);
+      
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
     } catch (error: any) {
       setError(error.message || 'Failed to delete category');
     }

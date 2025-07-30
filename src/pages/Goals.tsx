@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Target, Calendar, Plus, ArrowUpDown, TrendingUp, Edit3, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
 import { format, differenceInMonths } from 'date-fns';
+import { useQueryClient } from '@tanstack/react-query';
 import { toNumber, calculatePercentage, sanitizeFinancialData } from '../utils/validation';
 import { TopNavigation } from '../components/layout/TopNavigation';
 import { Modal } from '../components/common/Modal';
@@ -13,6 +14,7 @@ import { CurrencyIcon } from '../components/common/CurrencyIcon';
 import { Goal } from '../types';
 
 export const Goals: React.FC = () => {
+  const queryClient = useQueryClient();
   const { goals, addGoal, updateGoal, deleteGoal, addTransaction } = useFinance();
   const { currency, formatCurrency } = useInternationalization();
   const [showModal, setShowModal] = useState(false);
@@ -39,6 +41,9 @@ export const Goals: React.FC = () => {
       
       await addGoal(sanitizedGoal);
       setShowModal(false);
+      
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['goals'] });
     } catch (error: any) {
       console.error('Error adding goal:', error);
       setError(error.message || 'Failed to add goal. Please try again.');
@@ -59,6 +64,9 @@ export const Goals: React.FC = () => {
         await updateGoal(editingGoal.id, sanitizedGoal);
         setEditingGoal(null);
         setShowEditModal(false);
+        
+        // Invalidate related queries
+        queryClient.invalidateQueries({ queryKey: ['goals'] });
       }
     } catch (error: any) {
       console.error('Error updating goal:', error);
@@ -81,6 +89,9 @@ export const Goals: React.FC = () => {
         await deleteGoal(goalToDelete);
         setGoalToDelete(null);
         setShowDeleteConfirm(false);
+        
+        // Invalidate related queries
+        queryClient.invalidateQueries({ queryKey: ['goals'] });
       }
     } catch (error: any) {
       console.error('Error deleting goal:', error);

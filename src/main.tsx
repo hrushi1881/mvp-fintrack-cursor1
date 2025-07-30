@@ -1,5 +1,7 @@
 import { StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import App from './App.tsx';
 import './index.css';
 import './i18n'; // Import i18n configuration
@@ -10,6 +12,25 @@ import { OfflineNotice } from './components/common/OfflineNotice.tsx';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar } from '@capacitor/status-bar';
+
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      cacheTime: 10 * 60 * 1000, // 10 minutes
+      retry: (failureCount, error: any) => {
+        if (error?.code === 'PGRST301' || error?.message?.includes('JWT')) {
+          return false;
+        }
+        return failureCount < 3;
+      }
+    },
+    mutations: {
+      retry: 1
+    }
+  }
+});
 
 // Initialize Capacitor plugins if running as a native app
 if (Capacitor.isNativePlatform()) {
@@ -29,11 +50,14 @@ if (Capacitor.isNativePlatform()) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ErrorBoundary fallback={<ErrorFallback />}>
-      <Suspense fallback={<LoadingScreen message="Loading translations..." />}>
-        <App />
-        <OfflineNotice />
-      </Suspense>
-    </ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <ErrorBoundary fallback={<ErrorFallback />}>
+        <Suspense fallback={<LoadingScreen message="Loading translations..." />}>
+          <App />
+          <OfflineNotice />
+        </Suspense>
+      </ErrorBoundary>
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
   </StrictMode>
 );
