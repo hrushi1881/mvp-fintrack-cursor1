@@ -33,8 +33,8 @@ export const CategoryManagement: React.FC = () => {
   const selectedType = watch('type');
 
   // Default icons and colors
-  const defaultIcons = ['💰', '💵', '🏠', '🍔', '🚗', '🎬', '🏥', '🛍️', '📄', '📱', '✈️', '🎓', '🎁', '💼', '📈', '🏦', '🧾', '🔧', '📚', '🎯'];
-  
+  const defaultIcons = ['💰', '💵', '🏠', '🍔', '🚗', '🎬', '🏥', '🛍️', '📄', '📱', '✈️', '🎓', '🎁', '💼', '📈', '🏦', '🧾', '🔧', '📚', '🎯', '👤', '🎈', '🎇', '🎉', '💍', '🎰', '🎥', '📈', '🥨', '🍛', '🚅', '🚗'];
+
   const defaultColors = [
     '#EF4444', // red
     '#F97316', // orange
@@ -60,13 +60,13 @@ export const CategoryManagement: React.FC = () => {
 };
 
  // Invalidate related queries
-queryClient.invalidateQueries({ queryKey: ['user-categories'] }); // ✅ Correct line
+queryClient.invalidateQueries({ queryKey: ['user-categories'] }); 
 } catch (error: any) {
   setError(error.message || 'Failed to add category');
 }
 
 
-  const handleUpdateCategory = (data: CategoryFormData) => {
+  const handleUpdateCategory = async (data: CategoryFormData) => {
     if (!editingCategoryId) return;
     
     try {
