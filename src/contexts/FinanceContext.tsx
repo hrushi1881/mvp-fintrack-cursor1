@@ -13,7 +13,6 @@ import {
   SplitTransaction,
   DebtRepaymentStrategy
 } from '../types';
-import { toNumber, safeDivide, calculatePercentage, sanitizeFinancialData } from '../utils/validation';
 
 interface FinanceContextType {
   // Data
@@ -26,54 +25,45 @@ interface FinanceContextType {
   stats: DashboardStats;
   loading: boolean;
   
-  // Transaction operations
+  // CRUD Operations
   addTransaction: (transaction: Omit<Transaction, 'id' | 'userId'>) => Promise<void>;
   updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   addSplitTransaction: (mainTransaction: Omit<Transaction, 'id' | 'userId'>, splits: SplitTransaction[]) => Promise<void>;
-  getSplitTransactions: (parentId: string) => Transaction[];
-  searchTransactions: (query: string, filters?: any) => Promise<Transaction[]>;
-  getTransactionsPaginated: (page: number, pageSize: number, filters?: any) => Promise<{ data: Transaction[]; count: number }>;
   
-  // Goal operations
   addGoal: (goal: Omit<Goal, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   updateGoal: (id: string, updates: Partial<Goal>) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
   
-  // Liability operations
   addLiability: (liability: Omit<Liability, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   updateLiability: (id: string, updates: Partial<Liability>) => Promise<void>;
   deleteLiability: (id: string) => Promise<void>;
   
-  // Budget operations
   addBudget: (budget: Omit<Budget, 'id' | 'userId' | 'createdAt' | 'spent'>) => Promise<void>;
   updateBudget: (id: string, updates: Partial<Budget>) => Promise<void>;
   deleteBudget: (id: string) => Promise<void>;
   
-  // Recurring transaction operations
   addRecurringTransaction: (transaction: Omit<RecurringTransaction, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   updateRecurringTransaction: (id: string, updates: Partial<RecurringTransaction>) => Promise<void>;
   deleteRecurringTransaction: (id: string) => Promise<void>;
   
-  // Category operations
   addUserCategory: (category: Omit<UserCategory, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateUserCategory: (id: string, updates: Partial<UserCategory>) => Promise<void>;
   deleteUserCategory: (id: string) => Promise<void>;
   
-  // Analytics
+  // Utility functions
+  searchTransactions: (query: string, filters?: any) => Transaction[];
   getMonthlyTrends: (months: number) => any[];
   getCategoryBreakdown: (type: 'income' | 'expense', months: number) => any[];
   getNetWorthTrends: (months: number) => any[];
+  getSplitTransactions: (parentId: string) => Transaction[];
+  getTransactionsPaginated: (page: number, pageSize: number, filters?: any) => Promise<{ data: Transaction[]; count: number }>;
   calculateDebtRepaymentStrategy: (strategy: 'snowball' | 'avalanche', extraPayment: number) => DebtRepaymentStrategy;
-  
-  // AI and insights
-  getFinancialForecast: () => Promise<any>;
-  insights: any[];
-  refreshInsights: () => Promise<void>;
-  
-  // Data management
   exportData: (format: 'json' | 'csv') => Promise<string>;
   importData: (data: string, format: 'json' | 'csv') => Promise<void>;
+  getFinancialForecast: () => Promise<any>;
+  refreshInsights: () => Promise<void>;
+  insights: any[];
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -90,9 +80,54 @@ interface FinanceProviderProps {
   children: ReactNode;
 }
 
+// Timeout wrapper for Supabase operations
+const withTimeout = async <T,>(
+  operation: Promise<T>, 
+  timeoutMs: number = 10000,
+  operationName: string = 'Supabase operation'
+): Promise<T> => {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation, timeoutPromise]);
+};
+
+// Retry wrapper for Supabase operations
+const withRetry = async <T,>(
+  operation: () => Promise<T>,
+  maxRetries: number = 2,
+  operationName: string = 'Operation'
+): Promise<T> => {
+  let lastError: Error;
+  
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    try {
+      console.log(`${operationName} - Attempt ${attempt}/${maxRetries + 1}`);
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      console.error(`${operationName} failed on attempt ${attempt}:`, error);
+      
+      if (attempt <= maxRetries) {
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = Math.pow(2, attempt - 1) * 1000;
+        console.log(`Retrying ${operationName} in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError!;
+};
+
 export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
+  
+  // State
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
@@ -102,31 +137,7 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
   const [insights, setInsights] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Default categories
-  const defaultCategories: Omit<UserCategory, 'id' | 'userId' | 'createdAt' | 'updatedAt'>[] = [
-    // Income categories
-    { name: 'Salary', type: 'income', icon: '💼', color: '#10B981' },
-    { name: 'Freelance', type: 'income', icon: '💻', color: '#3B82F6' },
-    { name: 'Investment', type: 'income', icon: '📈', color: '#8B5CF6' },
-    { name: 'Business', type: 'income', icon: '🏢', color: '#F59E0B' },
-    { name: 'Gift', type: 'income', icon: '🎁', color: '#EC4899' },
-    { name: 'Other', type: 'income', icon: '💰', color: '#6B7280' },
-    
-    // Expense categories
-    { name: 'Food', type: 'expense', icon: '🍔', color: '#EF4444' },
-    { name: 'Transportation', type: 'expense', icon: '🚗', color: '#F97316' },
-    { name: 'Entertainment', type: 'expense', icon: '🎬', color: '#8B5CF6' },
-    { name: 'Shopping', type: 'expense', icon: '🛍️', color: '#EC4899' },
-    { name: 'Bills', type: 'expense', icon: '📄', color: '#6B7280' },
-    { name: 'Healthcare', type: 'expense', icon: '🏥', color: '#10B981' },
-    { name: 'Housing', type: 'expense', icon: '🏠', color: '#3B82F6' },
-    { name: 'Savings', type: 'expense', icon: '🏦', color: '#059669' },
-    { name: 'Debt Payment', type: 'expense', icon: '💳', color: '#DC2626' },
-    { name: 'Internal Transfer', type: 'expense', icon: '🔄', color: '#6366F1' },
-    { name: 'Other', type: 'expense', icon: '📊', color: '#6B7280' },
-  ];
-
-  // Load data when user changes
+  // Load all data when user changes
   useEffect(() => {
     if (user) {
       loadAllData();
@@ -143,21 +154,14 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     }
   }, [user]);
 
-  // Initialize default categories for new users
-  useEffect(() => {
-    if (user && userCategories.length === 0) {
-      initializeDefaultCategories();
-    }
-  }, [user, userCategories]);
-
   const loadAllData = async () => {
     if (!user) return;
     
     try {
       setLoading(true);
-      const startTime = Date.now();
+      console.log('🔄 Loading all financial data for user:', user.id);
       
-      // Load data in parallel for better performance
+      // Load all data in parallel for better performance
       const [
         transactionsResult,
         goalsResult,
@@ -171,1152 +175,1342 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
         loadLiabilities(),
         loadBudgets(),
         loadRecurringTransactions(),
-        loadUserCategories(),
+        loadUserCategories()
       ]);
 
       // Log any failed operations
       [transactionsResult, goalsResult, liabilitiesResult, budgetsResult, recurringResult, categoriesResult]
         .forEach((result, index) => {
+          const names = ['transactions', 'goals', 'liabilities', 'budgets', 'recurring', 'categories'];
           if (result.status === 'rejected') {
-            const operations = ['transactions', 'goals', 'liabilities', 'budgets', 'recurring', 'categories'];
-            console.error(`Failed to load ${operations[index]}:`, result.reason);
+            console.error(`❌ Failed to load ${names[index]}:`, result.reason);
+            showToast(`Failed to load ${names[index]}`, 'error');
+          } else {
+            console.log(`✅ Successfully loaded ${names[index]}`);
           }
         });
 
-      logQueryPerformance('load-all-data', startTime);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      showToast('Failed to load some data. Please refresh the page.', 'error');
+    } catch (error: any) {
+      console.error('❌ Error loading financial data:', error);
+      showToast('Failed to load financial data', 'error');
     } finally {
       setLoading(false);
+      console.log('✅ Finished loading all financial data');
     }
   };
 
-  const initializeDefaultCategories = async () => {
+  // Load functions with enhanced error handling and logging
+  const loadTransactions = async (): Promise<void> => {
     if (!user) return;
     
     try {
       const startTime = Date.now();
+      console.log('🔄 Loading transactions...');
       
-      // Check if categories already exist
-      const { data: existingCategories, error: checkError } = await supabase
-        .from('user_categories')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
+      const { data, error } = await withTimeout(
+        supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false }),
+        8000,
+        'Load transactions'
+      );
 
-      if (checkError) throw checkError;
-      
-      // Only initialize if no categories exist
-      if (!existingCategories || existingCategories.length === 0) {
-        const { data, error } = await supabase
-          .from('user_categories')
-          .insert(
-            defaultCategories.map(cat => ({
-              ...cat,
-              user_id: user.id,
-            }))
-          )
-          .select();
-
-        if (error) throw error;
-
-        if (data) {
-          const formattedCategories = data.map(formatUserCategory);
-          setUserCategories(formattedCategories);
-          logQueryPerformance('initialize-categories', startTime);
-        }
-      }
-    } catch (error) {
-      console.error('Error initializing default categories:', error);
-      // Set categories locally if DB fails
-      const localCategories = defaultCategories.map((cat, index) => ({
-        id: `local-${index}`,
-        ...cat,
-        userId: user.id,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
-      setUserCategories(localCategories);
-    }
-  };
-
-  // Optimized data loading functions with specific column selection
-  const loadTransactions = async () => {
-    if (!user) return;
-    
-    try {
-      const startTime = Date.now();
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('id, type, amount, category, description, date, recurring_transaction_id, parent_transaction_id')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false })
-        .limit(100); // Initial load limit
-
-      if (error) throw error;
-
-      const formattedTransactions = (data || []).map(formatTransaction);
-      setTransactions(formattedTransactions);
       logQueryPerformance('load-transactions', startTime);
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-      throw error;
-    }
-  };
-
-  const loadGoals = async () => {
-    if (!user) return;
-    
-    try {
-      const startTime = Date.now();
-      const { data, error } = await supabase
-        .from('goals')
-        .select('id, title, description, target_amount, current_amount, target_date, category, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const formattedGoals = (data || []).map(formatGoal);
-      setGoals(formattedGoals);
-      logQueryPerformance('load-goals', startTime);
-    } catch (error) {
-      console.error('Error loading goals:', error);
-      throw error;
-    }
-  };
-
-  const loadLiabilities = async () => {
-    if (!user) return;
-    
-    try {
-      const startTime = Date.now();
-      const { data, error } = await supabase
-        .from('liabilities')
-        .select('id, name, type, total_amount, remaining_amount, interest_rate, monthly_payment, due_date, start_date, linked_purchase_id, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const formattedLiabilities = (data || []).map(formatLiability);
-      setLiabilities(formattedLiabilities);
-      logQueryPerformance('load-liabilities', startTime);
-    } catch (error) {
-      console.error('Error loading liabilities:', error);
-      throw error;
-    }
-  };
-
-  const loadBudgets = async () => {
-    if (!user) return;
-    
-    try {
-      const startTime = Date.now();
-      const { data, error } = await supabase
-        .from('budgets')
-        .select('id, category, amount, spent, period, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const formattedBudgets = (data || []).map(formatBudget);
-      setBudgets(formattedBudgets);
-      logQueryPerformance('load-budgets', startTime);
-    } catch (error) {
-      console.error('Error loading budgets:', error);
-      throw error;
-    }
-  };
-
-  const loadRecurringTransactions = async () => {
-    if (!user) return;
-    
-    try {
-      const startTime = Date.now();
-      const { data, error } = await supabase
-        .from('recurring_transactions')
-        .select('id, type, amount, category, description, frequency, start_date, end_date, next_occurrence_date, last_processed_date, is_active, day_of_week, day_of_month, month_of_year, max_occurrences, current_occurrences, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const formattedRecurring = (data || []).map(formatRecurringTransaction);
-      setRecurringTransactions(formattedRecurring);
-      logQueryPerformance('load-recurring-transactions', startTime);
-    } catch (error) {
-      console.error('Error loading recurring transactions:', error);
-      throw error;
-    }
-  };
-
-  const loadUserCategories = async () => {
-    if (!user) return;
-    
-    try {
-      const startTime = Date.now();
-      const { data, error } = await supabase
-        .from('user_categories')
-        .select('id, name, type, icon, color, created_at, updated_at')
-        .eq('user_id', user.id)
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const formattedCategories = data.map(formatUserCategory);
-        setUserCategories(formattedCategories);
-        logQueryPerformance('load-user-categories', startTime);
-      }
-    } catch (error) {
-      console.error('Error loading user categories:', error);
-      throw error;
-    }
-  };
-
-  // Format functions with better error handling
-  const formatTransaction = (data: any): Transaction => ({
-    id: data.id,
-    type: data.type,
-    amount: toNumber(data.amount),
-    category: data.category || 'Other',
-    description: data.description || '',
-    date: new Date(data.date),
-    userId: data.user_id,
-    recurringTransactionId: data.recurring_transaction_id,
-    parentTransactionId: data.parent_transaction_id,
-  });
-
-  const formatGoal = (data: any): Goal => ({
-    id: data.id,
-    title: data.title || '',
-    description: data.description || '',
-    targetAmount: toNumber(data.target_amount),
-    currentAmount: toNumber(data.current_amount),
-    targetDate: new Date(data.target_date),
-    category: data.category || 'Other',
-    userId: data.user_id,
-    createdAt: new Date(data.created_at),
-  });
-
-  const formatLiability = (data: any): Liability => ({
-    id: data.id,
-    name: data.name || '',
-    type: data.type || 'other',
-    totalAmount: toNumber(data.total_amount),
-    remainingAmount: toNumber(data.remaining_amount),
-    interestRate: toNumber(data.interest_rate),
-    monthlyPayment: toNumber(data.monthly_payment),
-    due_date: new Date(data.due_date),
-    userId: data.user_id,
-    createdAt: new Date(data.created_at),
-    start_date: new Date(data.start_date),
-    linkedPurchaseId: data.linked_purchase_id,
-  });
-
-  const formatBudget = (data: any): Budget => ({
-    id: data.id,
-    category: data.category || '',
-    amount: toNumber(data.amount),
-    spent: toNumber(data.spent),
-    period: data.period || 'monthly',
-    userId: data.user_id,
-    createdAt: new Date(data.created_at),
-  });
-
-  const formatRecurringTransaction = (data: any): RecurringTransaction => ({
-    id: data.id,
-    type: data.type,
-    amount: toNumber(data.amount),
-    category: data.category || '',
-    description: data.description || '',
-    frequency: data.frequency,
-    startDate: new Date(data.start_date),
-    endDate: data.end_date ? new Date(data.end_date) : undefined,
-    nextOccurrenceDate: new Date(data.next_occurrence_date),
-    lastProcessedDate: data.last_processed_date ? new Date(data.last_processed_date) : undefined,
-    isActive: data.is_active,
-    userId: data.user_id,
-    createdAt: new Date(data.created_at),
-    dayOfWeek: data.day_of_week,
-    dayOfMonth: data.day_of_month,
-    monthOfYear: data.month_of_year,
-    maxOccurrences: data.max_occurrences,
-    currentOccurrences: toNumber(data.current_occurrences),
-  });
-
-  const formatUserCategory = (data: any): UserCategory => ({
-    id: data.id,
-    name: data.name || '',
-    type: data.type,
-    icon: data.icon,
-    color: data.color,
-    userId: data.user_id,
-    createdAt: new Date(data.created_at),
-    updatedAt: new Date(data.updated_at),
-  });
-
-  // Enhanced transaction operations with better error handling
-  const addTransaction = async (transaction: Omit<Transaction, 'id' | 'userId'>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      const sanitizedTransaction = sanitizeFinancialData(transaction, ['amount']);
-      
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert([{
-          user_id: user.id,
-          type: sanitizedTransaction.type,
-          amount: toNumber(sanitizedTransaction.amount),
-          category: sanitizedTransaction.category,
-          description: sanitizedTransaction.description,
-          date: sanitizedTransaction.date.toISOString().split('T')[0],
-          recurring_transaction_id: sanitizedTransaction.recurringTransactionId,
-          parent_transaction_id: sanitizedTransaction.parentTransactionId,
-        }])
-        .select('id, type, amount, category, description, date, recurring_transaction_id, parent_transaction_id')
-        .single();
 
       if (error) {
-        console.error('Supabase error adding transaction:', error);
+        console.error('❌ Supabase error loading transactions:', error);
+        throw new Error(`Failed to load transactions: ${error.message}`);
+      }
+
+      const formattedTransactions = (data || []).map(t => ({
+        ...t,
+        date: new Date(t.date),
+        createdAt: new Date(t.created_at),
+      }));
+
+      setTransactions(formattedTransactions);
+      console.log(`✅ Loaded ${formattedTransactions.length} transactions`);
+    } catch (error: any) {
+      console.error('❌ Error in loadTransactions:', error);
+      throw error;
+    }
+  };
+
+  const loadGoals = async (): Promise<void> => {
+    if (!user) return;
+    
+    try {
+      const startTime = Date.now();
+      console.log('🔄 Loading goals...');
+      
+      const { data, error } = await withTimeout(
+        supabase
+          .from('goals')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        8000,
+        'Load goals'
+      );
+
+      logQueryPerformance('load-goals', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error loading goals:', error);
+        throw new Error(`Failed to load goals: ${error.message}`);
+      }
+
+      const formattedGoals = (data || []).map(g => ({
+        ...g,
+        targetDate: new Date(g.target_date),
+        createdAt: new Date(g.created_at),
+        targetAmount: Number(g.target_amount),
+        currentAmount: Number(g.current_amount),
+      }));
+
+      setGoals(formattedGoals);
+      console.log(`✅ Loaded ${formattedGoals.length} goals`);
+    } catch (error: any) {
+      console.error('❌ Error in loadGoals:', error);
+      throw error;
+    }
+  };
+
+  const loadLiabilities = async (): Promise<void> => {
+    if (!user) return;
+    
+    try {
+      const startTime = Date.now();
+      console.log('🔄 Loading liabilities...');
+      
+      const { data, error } = await withTimeout(
+        supabase
+          .from('liabilities')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        8000,
+        'Load liabilities'
+      );
+
+      logQueryPerformance('load-liabilities', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error loading liabilities:', error);
+        throw new Error(`Failed to load liabilities: ${error.message}`);
+      }
+
+      const formattedLiabilities = (data || []).map(l => ({
+        ...l,
+        dueDate: new Date(l.due_date),
+        createdAt: new Date(l.created_at),
+        totalAmount: Number(l.total_amount),
+        remainingAmount: Number(l.remaining_amount),
+        interestRate: Number(l.interest_rate),
+        monthlyPayment: Number(l.monthly_payment),
+      }));
+
+      setLiabilities(formattedLiabilities);
+      console.log(`✅ Loaded ${formattedLiabilities.length} liabilities`);
+    } catch (error: any) {
+      console.error('❌ Error in loadLiabilities:', error);
+      throw error;
+    }
+  };
+
+  const loadBudgets = async (): Promise<void> => {
+    if (!user) return;
+    
+    try {
+      const startTime = Date.now();
+      console.log('🔄 Loading budgets...');
+      
+      const { data, error } = await withTimeout(
+        supabase
+          .from('budgets')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        8000,
+        'Load budgets'
+      );
+
+      logQueryPerformance('load-budgets', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error loading budgets:', error);
+        throw new Error(`Failed to load budgets: ${error.message}`);
+      }
+
+      const formattedBudgets = (data || []).map(b => ({
+        ...b,
+        createdAt: new Date(b.created_at),
+        amount: Number(b.amount),
+        spent: Number(b.spent),
+      }));
+
+      setBudgets(formattedBudgets);
+      console.log(`✅ Loaded ${formattedBudgets.length} budgets`);
+    } catch (error: any) {
+      console.error('❌ Error in loadBudgets:', error);
+      throw error;
+    }
+  };
+
+  const loadRecurringTransactions = async (): Promise<void> => {
+    if (!user) return;
+    
+    try {
+      const startTime = Date.now();
+      console.log('🔄 Loading recurring transactions...');
+      
+      const { data, error } = await withTimeout(
+        supabase
+          .from('recurring_transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        8000,
+        'Load recurring transactions'
+      );
+
+      logQueryPerformance('load-recurring-transactions', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error loading recurring transactions:', error);
+        throw new Error(`Failed to load recurring transactions: ${error.message}`);
+      }
+
+      const formattedRecurring = (data || []).map(rt => ({
+        ...rt,
+        startDate: new Date(rt.start_date),
+        endDate: rt.end_date ? new Date(rt.end_date) : undefined,
+        nextOccurrenceDate: new Date(rt.next_occurrence_date),
+        lastProcessedDate: rt.last_processed_date ? new Date(rt.last_processed_date) : undefined,
+        createdAt: new Date(rt.created_at),
+        amount: Number(rt.amount),
+      }));
+
+      setRecurringTransactions(formattedRecurring);
+      console.log(`✅ Loaded ${formattedRecurring.length} recurring transactions`);
+    } catch (error: any) {
+      console.error('❌ Error in loadRecurringTransactions:', error);
+      throw error;
+    }
+  };
+
+  const loadUserCategories = async (): Promise<void> => {
+    if (!user) return;
+    
+    try {
+      const startTime = Date.now();
+      console.log('🔄 Loading user categories...');
+      
+      const { data, error } = await withTimeout(
+        supabase
+          .from('user_categories')
+          .select('id, name, type, icon, color, created_at, updated_at')
+          .eq('user_id', user.id)
+          .order('name', { ascending: true }),
+        8000,
+        'Load user categories'
+      );
+
+      logQueryPerformance('load-user-categories', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error loading user categories:', error);
+        throw new Error(`Failed to load user categories: ${error.message}`);
+      }
+
+      const formattedCategories = (data || []).map(c => ({
+        ...c,
+        userId: user.id,
+        createdAt: new Date(c.created_at),
+        updatedAt: new Date(c.updated_at),
+      }));
+
+      setUserCategories(formattedCategories);
+      console.log(`✅ Loaded ${formattedCategories.length} user categories`);
+    } catch (error: any) {
+      console.error('❌ Error in loadUserCategories:', error);
+      throw error;
+    }
+  };
+
+  // Enhanced CRUD operations with comprehensive error handling
+  const addTransaction = async (transaction: Omit<Transaction, 'id' | 'userId'>): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Adding transaction:', transaction);
+      const startTime = Date.now();
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('transactions')
+            .insert([{
+              user_id: user.id,
+              type: transaction.type,
+              amount: transaction.amount,
+              category: transaction.category,
+              description: transaction.description,
+              date: transaction.date.toISOString().split('T')[0],
+              recurring_transaction_id: transaction.recurringTransactionId || null,
+              parent_transaction_id: transaction.parentTransactionId || null,
+            }])
+            .select()
+            .single();
+        }, 2, 'Add transaction'),
+        10000,
+        'Add transaction'
+      );
+
+      logQueryPerformance('add-transaction', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error adding transaction:', error);
         throw new Error(`Failed to add transaction: ${error.message}`);
       }
 
-      const newTransaction = formatTransaction({ ...data, user_id: user.id });
+      console.log('✅ Transaction added successfully:', data);
+      
+      // Update local state
+      const newTransaction = {
+        ...data,
+        date: new Date(data.date),
+        createdAt: new Date(data.created_at),
+        userId: user.id,
+      };
+      
       setTransactions(prev => [newTransaction, ...prev]);
-
-      // Update budget spent amount if it's an expense
-      if (newTransaction.type === 'expense') {
-        await updateBudgetSpent(newTransaction.category, toNumber(newTransaction.amount));
+      
+      // Update budget spent if it's an expense
+      if (transaction.type === 'expense') {
+        await updateBudgetSpent(transaction.category, transaction.amount);
       }
-
-      logQueryPerformance('add-transaction', startTime);
-      showToast('Transaction added successfully!', 'success');
+      
+      showToast('Transaction added successfully', 'success');
     } catch (error: any) {
-      console.error('Error adding transaction:', error);
+      console.error('❌ Error in addTransaction:', error);
       showToast(error.message || 'Failed to add transaction', 'error');
       throw error;
     }
   };
 
-  // Enhanced goal operations with better error handling
-  const addGoal = async (goal: Omit<Goal, 'id' | 'userId' | 'createdAt'>) => {
+  const addGoal = async (goal: Omit<Goal, 'id' | 'userId' | 'createdAt'>): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
-
+    
     try {
+      console.log('🔄 Adding goal:', goal);
       const startTime = Date.now();
-      const sanitizedGoal = sanitizeFinancialData(goal, ['targetAmount', 'currentAmount']);
       
-      const { data, error } = await supabase
-        .from('goals')
-        .insert([{
-          user_id: user.id,
-          title: sanitizedGoal.title,
-          description: sanitizedGoal.description,
-          target_amount: toNumber(sanitizedGoal.targetAmount),
-          current_amount: toNumber(sanitizedGoal.currentAmount),
-          target_date: sanitizedGoal.targetDate.toISOString().split('T')[0],
-          category: sanitizedGoal.category,
-        }])
-        .select('id, title, description, target_amount, current_amount, target_date, category, created_at')
-        .single();
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('goals')
+            .insert([{
+              user_id: user.id,
+              title: goal.title,
+              description: goal.description,
+              target_amount: goal.targetAmount,
+              current_amount: goal.currentAmount || 0,
+              target_date: goal.targetDate.toISOString().split('T')[0],
+              category: goal.category,
+            }])
+            .select()
+            .single();
+        }, 2, 'Add goal'),
+        10000,
+        'Add goal'
+      );
+
+      logQueryPerformance('add-goal', startTime);
 
       if (error) {
-        console.error('Supabase error adding goal:', error);
+        console.error('❌ Supabase error adding goal:', error);
         throw new Error(`Failed to add goal: ${error.message}`);
       }
 
-      const newGoal = formatGoal({ ...data, user_id: user.id });
-      setGoals(prev => [newGoal, ...prev]);
-
-      logQueryPerformance('add-goal', startTime);
-      showToast('Goal created successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error adding goal:', error);
-      showToast(error.message || 'Failed to create goal', 'error');
-      throw error;
-    }
-  };
-
-  // Enhanced recurring transaction operations
-  const addRecurringTransaction = async (transaction: Omit<RecurringTransaction, 'id' | 'userId' | 'createdAt'>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      const sanitizedTransaction = sanitizeFinancialData(transaction, ['amount', 'currentOccurrences']);
+      console.log('✅ Goal added successfully:', data);
       
-      const insertData = {
-        user_id: user.id,
-        type: sanitizedTransaction.type,
-        amount: toNumber(sanitizedTransaction.amount),
-        category: sanitizedTransaction.category,
-        description: sanitizedTransaction.description,
-        frequency: sanitizedTransaction.frequency,
-        start_date: sanitizedTransaction.startDate.toISOString().split('T')[0],
-        end_date: sanitizedTransaction.endDate?.toISOString().split('T')[0] || null,
-        next_occurrence_date: sanitizedTransaction.nextOccurrenceDate.toISOString().split('T')[0],
-        last_processed_date: sanitizedTransaction.lastProcessedDate?.toISOString().split('T')[0] || null,
-        is_active: sanitizedTransaction.isActive,
-        day_of_week: sanitizedTransaction.dayOfWeek || null,
-        day_of_month: sanitizedTransaction.dayOfMonth || null,
-        month_of_year: sanitizedTransaction.monthOfYear || null,
-        max_occurrences: sanitizedTransaction.maxOccurrences || null,
-        current_occurrences: toNumber(sanitizedTransaction.currentOccurrences),
+      // Update local state
+      const newGoal = {
+        ...data,
+        targetDate: new Date(data.target_date),
+        createdAt: new Date(data.created_at),
+        targetAmount: Number(data.target_amount),
+        currentAmount: Number(data.current_amount),
+        userId: user.id,
       };
-
-      const { data, error } = await supabase
-        .from('recurring_transactions')
-        .insert([insertData])
-        .select('id, type, amount, category, description, frequency, start_date, end_date, next_occurrence_date, last_processed_date, is_active, day_of_week, day_of_month, month_of_year, max_occurrences, current_occurrences, created_at')
-        .single();
-
-      if (error) {
-        console.error('Supabase error adding recurring transaction:', error);
-        throw new Error(`Failed to add recurring transaction: ${error.message}`);
-      }
-
-      const newRecurringTransaction = formatRecurringTransaction({ ...data, user_id: user.id });
-      setRecurringTransactions(prev => [newRecurringTransaction, ...prev]);
-
-      logQueryPerformance('add-recurring-transaction', startTime);
-      showToast('Recurring transaction created successfully!', 'success');
+      
+      setGoals(prev => [newGoal, ...prev]);
+      showToast('Goal added successfully', 'success');
     } catch (error: any) {
-      console.error('Error adding recurring transaction:', error);
-      showToast(error.message || 'Failed to create recurring transaction', 'error');
+      console.error('❌ Error in addGoal:', error);
+      showToast(error.message || 'Failed to add goal', 'error');
       throw error;
     }
   };
 
-  // Enhanced user category operations
-  const addUserCategory = async (category: Omit<UserCategory, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      
-      const { data, error } = await supabase
-        .from('user_categories')
-        .insert([{
-          user_id: user.id,
-          name: category.name,
-          type: category.type,
-          icon: category.icon,
-          color: category.color,
-        }])
-        .select('id, name, type, icon, color, created_at, updated_at')
-        .single();
-
-      if (error) {
-        console.error('Supabase error adding user category:', error);
-        throw new Error(`Failed to add category: ${error.message}`);
-      }
-
-      const newCategory = formatUserCategory({ ...data, user_id: user.id });
-      setUserCategories(prev => [...prev, newCategory]);
-
-      logQueryPerformance('add-user-category', startTime);
-      showToast('Category added successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error adding user category:', error);
-      showToast(error.message || 'Failed to add category', 'error');
-      throw error;
-    }
-  };
-
-  const deleteUserCategory = async (id: string) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      
-      const { error } = await supabase
-        .from('user_categories')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Supabase error deleting user category:', error);
-        throw new Error(`Failed to delete category: ${error.message}`);
-      }
-
-      setUserCategories(prev => prev.filter(c => c.id !== id));
-
-      logQueryPerformance('delete-user-category', startTime);
-      showToast('Category deleted successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error deleting user category:', error);
-      showToast(error.message || 'Failed to delete category', 'error');
-      throw error;
-    }
-  };
-
-  // Server-side search with pagination
-  const searchTransactions = async (query: string, filters?: any): Promise<Transaction[]> => {
-    if (!user) throw new Error('User not authenticated');
-    if (!query.trim() && !filters) return transactions;
-    
-    try {
-      const startTime = Date.now();
-      let queryBuilder = supabase
-        .from('transactions')
-        .select('id, type, amount, category, description, date, recurring_transaction_id, parent_transaction_id')
-        .eq('user_id', user.id);
-
-      // Add text search
-      if (query.trim()) {
-        queryBuilder = queryBuilder.or(`description.ilike.%${query}%,category.ilike.%${query}%`);
-      }
-
-      // Add filters
-      if (filters?.type && filters.type !== 'all') {
-        queryBuilder = queryBuilder.eq('type', filters.type);
-      }
-      
-      if (filters?.category) {
-        queryBuilder = queryBuilder.eq('category', filters.category);
-      }
-      
-      if (filters?.dateRange?.start) {
-        queryBuilder = queryBuilder.gte('date', filters.dateRange.start);
-      }
-      
-      if (filters?.dateRange?.end) {
-        queryBuilder = queryBuilder.lte('date', filters.dateRange.end);
-      }
-      
-      if (filters?.amountRange?.min) {
-        queryBuilder = queryBuilder.gte('amount', filters.amountRange.min);
-      }
-      
-      if (filters?.amountRange?.max) {
-        queryBuilder = queryBuilder.lte('amount', filters.amountRange.max);
-      }
-
-      const { data, error } = await queryBuilder
-        .order('date', { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-
-      const results = (data || []).map(formatTransaction);
-      logQueryPerformance('search-transactions', startTime);
-      return results;
-    } catch (error) {
-      console.error('Error searching transactions:', error);
-      throw error;
-    }
-  };
-
-  // Paginated transactions
-  const getTransactionsPaginated = async (
-    page: number, 
-    pageSize: number, 
-    filters?: any
-  ): Promise<{ data: Transaction[]; count: number }> => {
+  const addBudget = async (budget: Omit<Budget, 'id' | 'userId' | 'createdAt' | 'spent'>): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
     
     try {
+      console.log('🔄 Adding budget:', budget);
       const startTime = Date.now();
-      let queryBuilder = supabase
-        .from('transactions')
-        .select('id, type, amount, category, description, date, recurring_transaction_id, parent_transaction_id', { count: 'exact' })
-        .eq('user_id', user.id);
-
-      // Apply filters
-      if (filters?.type && filters.type !== 'all') {
-        queryBuilder = queryBuilder.eq('type', filters.type);
-      }
       
-      if (filters?.category) {
-        queryBuilder = queryBuilder.eq('category', filters.category);
-      }
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('budgets')
+            .insert([{
+              user_id: user.id,
+              category: budget.category,
+              amount: budget.amount,
+              spent: 0,
+              period: budget.period,
+            }])
+            .select()
+            .single();
+        }, 2, 'Add budget'),
+        10000,
+        'Add budget'
+      );
 
-      const { data, error, count } = await queryBuilder
-        .order('date', { ascending: false })
-        .range(page * pageSize, (page + 1) * pageSize - 1);
-
-      if (error) throw error;
-
-      const formattedData = (data || []).map(formatTransaction);
-      logQueryPerformance('get-transactions-paginated', startTime);
-      
-      return { data: formattedData, count: count || 0 };
-    } catch (error) {
-      console.error('Error getting paginated transactions:', error);
-      throw error;
-    }
-  };
-
-  // Enhanced update operations with optimistic updates
-  const updateGoal = async (id: string, updates: Partial<Goal>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      const sanitizedUpdates = sanitizeFinancialData(updates, ['targetAmount', 'currentAmount']);
-      
-      const updateData: any = {};
-      if (sanitizedUpdates.title) updateData.title = sanitizedUpdates.title;
-      if (sanitizedUpdates.description) updateData.description = sanitizedUpdates.description;
-      if (sanitizedUpdates.targetAmount !== undefined) updateData.target_amount = toNumber(sanitizedUpdates.targetAmount);
-      if (sanitizedUpdates.currentAmount !== undefined) updateData.current_amount = toNumber(sanitizedUpdates.currentAmount);
-      if (sanitizedUpdates.targetDate) updateData.target_date = sanitizedUpdates.targetDate.toISOString().split('T')[0];
-      if (sanitizedUpdates.category) updateData.category = sanitizedUpdates.category;
-
-      const { data, error } = await supabase
-        .from('goals')
-        .update(updateData)
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .select('id, title, description, target_amount, current_amount, target_date, category, created_at')
-        .single();
+      logQueryPerformance('add-budget', startTime);
 
       if (error) {
-        console.error('Supabase error updating goal:', error);
-        throw new Error(`Failed to update goal: ${error.message}`);
-      }
-
-      const updatedGoal = formatGoal({ ...data, user_id: user.id });
-      setGoals(prev => prev.map(g => g.id === id ? updatedGoal : g));
-
-      logQueryPerformance('update-goal', startTime);
-      showToast('Goal updated successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error updating goal:', error);
-      showToast(error.message || 'Failed to update goal', 'error');
-      throw error;
-    }
-  };
-
-  const deleteGoal = async (id: string) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      
-      const { error } = await supabase
-        .from('goals')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Supabase error deleting goal:', error);
-        throw new Error(`Failed to delete goal: ${error.message}`);
-      }
-
-      setGoals(prev => prev.filter(g => g.id !== id));
-
-      logQueryPerformance('delete-goal', startTime);
-      showToast('Goal deleted successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error deleting goal:', error);
-      showToast(error.message || 'Failed to delete goal', 'error');
-      throw error;
-    }
-  };
-
-  // Enhanced budget operations
-  const addBudget = async (budget: Omit<Budget, 'id' | 'userId' | 'createdAt' | 'spent'>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      const sanitizedBudget = sanitizeFinancialData(budget, ['amount']);
-      
-      const { data, error } = await supabase
-        .from('budgets')
-        .insert([{
-          user_id: user.id,
-          category: sanitizedBudget.category,
-          amount: toNumber(sanitizedBudget.amount),
-          spent: 0,
-          period: sanitizedBudget.period,
-        }])
-        .select('id, category, amount, spent, period, created_at')
-        .single();
-
-      if (error) {
-        console.error('Supabase error adding budget:', error);
+        console.error('❌ Supabase error adding budget:', error);
         throw new Error(`Failed to add budget: ${error.message}`);
       }
 
-      const newBudget = formatBudget({ ...data, user_id: user.id });
+      console.log('✅ Budget added successfully:', data);
+      
+      // Update local state
+      const newBudget = {
+        ...data,
+        createdAt: new Date(data.created_at),
+        amount: Number(data.amount),
+        spent: Number(data.spent),
+        userId: user.id,
+      };
+      
       setBudgets(prev => [newBudget, ...prev]);
-
-      logQueryPerformance('add-budget', startTime);
-      showToast('Budget created successfully!', 'success');
+      showToast('Budget added successfully', 'success');
     } catch (error: any) {
-      console.error('Error adding budget:', error);
-      showToast(error.message || 'Failed to create budget', 'error');
+      console.error('❌ Error in addBudget:', error);
+      showToast(error.message || 'Failed to add budget', 'error');
       throw error;
     }
   };
 
-  const updateBudget = async (id: string, updates: Partial<Budget>) => {
+  const addLiability = async (liability: Omit<Liability, 'id' | 'userId' | 'createdAt'>): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
-
+    
     try {
-      const startTime = Date.now();
-      const sanitizedUpdates = sanitizeFinancialData(updates, ['amount', 'spent']);
-      
-      const updateData: any = {};
-      if (sanitizedUpdates.category) updateData.category = sanitizedUpdates.category;
-      if (sanitizedUpdates.amount !== undefined) updateData.amount = toNumber(sanitizedUpdates.amount);
-      if (sanitizedUpdates.spent !== undefined) updateData.spent = toNumber(sanitizedUpdates.spent);
-      if (sanitizedUpdates.period) updateData.period = sanitizedUpdates.period;
-
-      const { data, error } = await supabase
-        .from('budgets')
-        .update(updateData)
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .select('id, category, amount, spent, period, created_at')
-        .single();
-
-      if (error) {
-        console.error('Supabase error updating budget:', error);
-        throw new Error(`Failed to update budget: ${error.message}`);
-      }
-
-      const updatedBudget = formatBudget({ ...data, user_id: user.id });
-      setBudgets(prev => prev.map(b => b.id === id ? updatedBudget : b));
-
-      logQueryPerformance('update-budget', startTime);
-    } catch (error: any) {
-      console.error('Error updating budget:', error);
-      showToast(error.message || 'Failed to update budget', 'error');
-      throw error;
-    }
-  };
-
-  const deleteBudget = async (id: string) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
+      console.log('🔄 Adding liability:', liability);
       const startTime = Date.now();
       
-      const { error } = await supabase
-        .from('budgets')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('liabilities')
+            .insert([{
+              user_id: user.id,
+              name: liability.name,
+              type: liability.type,
+              total_amount: liability.totalAmount,
+              remaining_amount: liability.remainingAmount,
+              interest_rate: liability.interestRate,
+              monthly_payment: liability.monthlyPayment,
+              due_date: liability.due_date.toISOString().split('T')[0],
+              start_date: liability.start_date.toISOString().split('T')[0],
+              linked_purchase_id: liability.linkedPurchaseId || null,
+            }])
+            .select()
+            .single();
+        }, 2, 'Add liability'),
+        10000,
+        'Add liability'
+      );
+
+      logQueryPerformance('add-liability', startTime);
 
       if (error) {
-        console.error('Supabase error deleting budget:', error);
-        throw new Error(`Failed to delete budget: ${error.message}`);
-      }
-
-      setBudgets(prev => prev.filter(b => b.id !== id));
-
-      logQueryPerformance('delete-budget', startTime);
-      showToast('Budget deleted successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error deleting budget:', error);
-      showToast(error.message || 'Failed to delete budget', 'error');
-      throw error;
-    }
-  };
-
-  // Enhanced liability operations
-  const addLiability = async (liability: Omit<Liability, 'id' | 'userId' | 'createdAt'>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      const sanitizedLiability = sanitizeFinancialData(liability, [
-        'totalAmount', 
-        'remainingAmount', 
-        'interestRate', 
-        'monthlyPayment'
-      ]);
-      
-      const { data, error } = await supabase
-        .from('liabilities')
-        .insert([{
-          user_id: user.id,
-          name: sanitizedLiability.name,
-          type: sanitizedLiability.type,
-          total_amount: toNumber(sanitizedLiability.totalAmount),
-          remaining_amount: toNumber(sanitizedLiability.remainingAmount),
-          interest_rate: toNumber(sanitizedLiability.interestRate),
-          monthly_payment: toNumber(sanitizedLiability.monthlyPayment),
-          due_date: sanitizedLiability.due_date.toISOString().split('T')[0],
-          start_date: sanitizedLiability.start_date.toISOString().split('T')[0],
-          linked_purchase_id: sanitizedLiability.linkedPurchaseId,
-        }])
-        .select('id, name, type, total_amount, remaining_amount, interest_rate, monthly_payment, due_date, start_date, linked_purchase_id, created_at')
-        .single();
-
-      if (error) {
-        console.error('Supabase error adding liability:', error);
+        console.error('❌ Supabase error adding liability:', error);
         throw new Error(`Failed to add liability: ${error.message}`);
       }
 
-      const newLiability = formatLiability({ ...data, user_id: user.id });
+      console.log('✅ Liability added successfully:', data);
+      
+      // Update local state
+      const newLiability = {
+        ...data,
+        dueDate: new Date(data.due_date),
+        createdAt: new Date(data.created_at),
+        totalAmount: Number(data.total_amount),
+        remainingAmount: Number(data.remaining_amount),
+        interestRate: Number(data.interest_rate),
+        monthlyPayment: Number(data.monthly_payment),
+        userId: user.id,
+      };
+      
       setLiabilities(prev => [newLiability, ...prev]);
-
-      logQueryPerformance('add-liability', startTime);
-      showToast('Liability added successfully!', 'success');
+      showToast('Liability added successfully', 'success');
     } catch (error: any) {
-      console.error('Error adding liability:', error);
+      console.error('❌ Error in addLiability:', error);
       showToast(error.message || 'Failed to add liability', 'error');
       throw error;
     }
   };
 
-  const updateLiability = async (id: string, updates: Partial<Liability>) => {
+  const addRecurringTransaction = async (transaction: Omit<RecurringTransaction, 'id' | 'userId' | 'createdAt'>): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
-
+    
     try {
+      console.log('🔄 Adding recurring transaction:', transaction);
       const startTime = Date.now();
-      const sanitizedUpdates = sanitizeFinancialData(updates, [
-        'totalAmount', 
-        'remainingAmount', 
-        'interestRate', 
-        'monthlyPayment'
-      ]);
       
-      const updateData: any = {};
-      if (sanitizedUpdates.name) updateData.name = sanitizedUpdates.name;
-      if (sanitizedUpdates.type) updateData.type = sanitizedUpdates.type;
-      if (sanitizedUpdates.totalAmount !== undefined) updateData.total_amount = toNumber(sanitizedUpdates.totalAmount);
-      if (sanitizedUpdates.remainingAmount !== undefined) updateData.remaining_amount = toNumber(sanitizedUpdates.remainingAmount);
-      if (sanitizedUpdates.interestRate !== undefined) updateData.interest_rate = toNumber(sanitizedUpdates.interestRate);
-      if (sanitizedUpdates.monthlyPayment !== undefined) updateData.monthly_payment = toNumber(sanitizedUpdates.monthlyPayment);
-      if (sanitizedUpdates.due_date) updateData.due_date = sanitizedUpdates.due_date.toISOString().split('T')[0];
-      if (sanitizedUpdates.start_date) updateData.start_date = sanitizedUpdates.start_date.toISOString().split('T')[0];
-      if (sanitizedUpdates.linkedPurchaseId !== undefined) updateData.linked_purchase_id = sanitizedUpdates.linkedPurchaseId;
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('recurring_transactions')
+            .insert([{
+              user_id: user.id,
+              type: transaction.type,
+              amount: transaction.amount,
+              category: transaction.category,
+              description: transaction.description,
+              frequency: transaction.frequency,
+              start_date: transaction.startDate.toISOString().split('T')[0],
+              end_date: transaction.endDate ? transaction.endDate.toISOString().split('T')[0] : null,
+              next_occurrence_date: transaction.nextOccurrenceDate.toISOString().split('T')[0],
+              last_processed_date: transaction.lastProcessedDate ? transaction.lastProcessedDate.toISOString().split('T')[0] : null,
+              is_active: transaction.isActive,
+              day_of_week: transaction.dayOfWeek || null,
+              day_of_month: transaction.dayOfMonth || null,
+              month_of_year: transaction.monthOfYear || null,
+              max_occurrences: transaction.maxOccurrences || null,
+              current_occurrences: transaction.currentOccurrences || 0,
+            }])
+            .select()
+            .single();
+        }, 2, 'Add recurring transaction'),
+        10000,
+        'Add recurring transaction'
+      );
 
-      const { data, error } = await supabase
-        .from('liabilities')
-        .update(updateData)
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .select('id, name, type, total_amount, remaining_amount, interest_rate, monthly_payment, due_date, start_date, linked_purchase_id, created_at')
-        .single();
+      logQueryPerformance('add-recurring-transaction', startTime);
 
       if (error) {
-        console.error('Supabase error updating liability:', error);
+        console.error('❌ Supabase error adding recurring transaction:', error);
+        console.error('❌ Full error details:', JSON.stringify(error, null, 2));
+        throw new Error(`Failed to add recurring transaction: ${error.message}`);
+      }
+
+      console.log('✅ Recurring transaction added successfully:', data);
+      
+      // Update local state
+      const newRecurring = {
+        ...data,
+        startDate: new Date(data.start_date),
+        endDate: data.end_date ? new Date(data.end_date) : undefined,
+        nextOccurrenceDate: new Date(data.next_occurrence_date),
+        lastProcessedDate: data.last_processed_date ? new Date(data.last_processed_date) : undefined,
+        createdAt: new Date(data.created_at),
+        amount: Number(data.amount),
+        userId: user.id,
+      };
+      
+      setRecurringTransactions(prev => [newRecurring, ...prev]);
+      showToast('Recurring transaction added successfully', 'success');
+    } catch (error: any) {
+      console.error('❌ Error in addRecurringTransaction:', error);
+      showToast(error.message || 'Failed to add recurring transaction', 'error');
+      throw error;
+    }
+  };
+
+  const addUserCategory = async (category: Omit<UserCategory, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Adding user category:', category);
+      const startTime = Date.now();
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('user_categories')
+            .insert([{
+              user_id: user.id,
+              name: category.name,
+              type: category.type,
+              icon: category.icon || null,
+              color: category.color || null,
+            }])
+            .select()
+            .single();
+        }, 2, 'Add user category'),
+        10000,
+        'Add user category'
+      );
+
+      logQueryPerformance('add-user-category', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error adding user category:', error);
+        console.error('❌ Full error details:', JSON.stringify(error, null, 2));
+        throw new Error(`Failed to add user category: ${error.message}`);
+      }
+
+      console.log('✅ User category added successfully:', data);
+      
+      // Update local state immediately
+      const newCategory = {
+        ...data,
+        userId: user.id,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at),
+      };
+      
+      setUserCategories(prev => [...prev, newCategory]);
+      showToast('Category added successfully', 'success');
+      
+      // Force reload to ensure sync
+      setTimeout(() => {
+        loadUserCategories().catch(console.error);
+      }, 500);
+      
+    } catch (error: any) {
+      console.error('❌ Error in addUserCategory:', error);
+      showToast(error.message || 'Failed to add category', 'error');
+      throw error;
+    }
+  };
+
+  // Update operations with enhanced error handling
+  const updateGoal = async (id: string, updates: Partial<Goal>): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Updating goal:', id, updates);
+      const startTime = Date.now();
+      
+      const updateData: any = {};
+      if (updates.title !== undefined) updateData.title = updates.title;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.targetAmount !== undefined) updateData.target_amount = updates.targetAmount;
+      if (updates.currentAmount !== undefined) updateData.current_amount = updates.currentAmount;
+      if (updates.targetDate !== undefined) updateData.target_date = updates.targetDate.toISOString().split('T')[0];
+      if (updates.category !== undefined) updateData.category = updates.category;
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('goals')
+            .update(updateData)
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .select()
+            .single();
+        }, 2, 'Update goal'),
+        10000,
+        'Update goal'
+      );
+
+      logQueryPerformance('update-goal', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error updating goal:', error);
+        throw new Error(`Failed to update goal: ${error.message}`);
+      }
+
+      console.log('✅ Goal updated successfully:', data);
+      
+      // Update local state
+      setGoals(prev => prev.map(g => g.id === id ? {
+        ...g,
+        ...updates,
+        targetDate: updates.targetDate || g.targetDate,
+      } : g));
+      
+      showToast('Goal updated successfully', 'success');
+    } catch (error: any) {
+      console.error('❌ Error in updateGoal:', error);
+      showToast(error.message || 'Failed to update goal', 'error');
+      throw error;
+    }
+  };
+
+  const updateBudget = async (id: string, updates: Partial<Budget>): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Updating budget:', id, updates);
+      const startTime = Date.now();
+      
+      const updateData: any = {};
+      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.amount !== undefined) updateData.amount = updates.amount;
+      if (updates.spent !== undefined) updateData.spent = updates.spent;
+      if (updates.period !== undefined) updateData.period = updates.period;
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('budgets')
+            .update(updateData)
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .select()
+            .single();
+        }, 2, 'Update budget'),
+        10000,
+        'Update budget'
+      );
+
+      logQueryPerformance('update-budget', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error updating budget:', error);
+        throw new Error(`Failed to update budget: ${error.message}`);
+      }
+
+      console.log('✅ Budget updated successfully:', data);
+      
+      // Update local state
+      setBudgets(prev => prev.map(b => b.id === id ? {
+        ...b,
+        ...updates,
+      } : b));
+      
+      showToast('Budget updated successfully', 'success');
+    } catch (error: any) {
+      console.error('❌ Error in updateBudget:', error);
+      showToast(error.message || 'Failed to update budget', 'error');
+      throw error;
+    }
+  };
+
+  const updateLiability = async (id: string, updates: Partial<Liability>): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Updating liability:', id, updates);
+      const startTime = Date.now();
+      
+      const updateData: any = {};
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.type !== undefined) updateData.type = updates.type;
+      if (updates.totalAmount !== undefined) updateData.total_amount = updates.totalAmount;
+      if (updates.remainingAmount !== undefined) updateData.remaining_amount = updates.remainingAmount;
+      if (updates.interestRate !== undefined) updateData.interest_rate = updates.interestRate;
+      if (updates.monthlyPayment !== undefined) updateData.monthly_payment = updates.monthlyPayment;
+      if (updates.due_date !== undefined) updateData.due_date = updates.due_date.toISOString().split('T')[0];
+      if (updates.start_date !== undefined) updateData.start_date = updates.start_date.toISOString().split('T')[0];
+      if (updates.linkedPurchaseId !== undefined) updateData.linked_purchase_id = updates.linkedPurchaseId;
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('liabilities')
+            .update(updateData)
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .select()
+            .single();
+        }, 2, 'Update liability'),
+        10000,
+        'Update liability'
+      );
+
+      logQueryPerformance('update-liability', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error updating liability:', error);
         throw new Error(`Failed to update liability: ${error.message}`);
       }
 
-      const updatedLiability = formatLiability({ ...data, user_id: user.id });
-      setLiabilities(prev => prev.map(l => l.id === id ? updatedLiability : l));
-
-      logQueryPerformance('update-liability', startTime);
-      showToast('Liability updated successfully!', 'success');
+      console.log('✅ Liability updated successfully:', data);
+      
+      // Update local state
+      setLiabilities(prev => prev.map(l => l.id === id ? {
+        ...l,
+        ...updates,
+        dueDate: updates.due_date || l.dueDate,
+      } : l));
+      
+      showToast('Liability updated successfully', 'success');
     } catch (error: any) {
-      console.error('Error updating liability:', error);
+      console.error('❌ Error in updateLiability:', error);
       showToast(error.message || 'Failed to update liability', 'error');
       throw error;
     }
   };
 
-  const deleteLiability = async (id: string) => {
+  const updateRecurringTransaction = async (id: string, updates: Partial<RecurringTransaction>): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
-
+    
     try {
+      console.log('🔄 Updating recurring transaction:', id, updates);
       const startTime = Date.now();
-      
-      const { error } = await supabase
-        .from('liabilities')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Supabase error deleting liability:', error);
-        throw new Error(`Failed to delete liability: ${error.message}`);
-      }
-
-      setLiabilities(prev => prev.filter(l => l.id !== id));
-
-      logQueryPerformance('delete-liability', startTime);
-      showToast('Liability deleted successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error deleting liability:', error);
-      showToast(error.message || 'Failed to delete liability', 'error');
-      throw error;
-    }
-  };
-
-  // Enhanced recurring transaction operations
-  const updateRecurringTransaction = async (id: string, updates: Partial<RecurringTransaction>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
-      const startTime = Date.now();
-      const sanitizedUpdates = sanitizeFinancialData(updates, ['amount', 'currentOccurrences']);
       
       const updateData: any = {};
-      if (sanitizedUpdates.type) updateData.type = sanitizedUpdates.type;
-      if (sanitizedUpdates.amount !== undefined) updateData.amount = toNumber(sanitizedUpdates.amount);
-      if (sanitizedUpdates.category) updateData.category = sanitizedUpdates.category;
-      if (sanitizedUpdates.description) updateData.description = sanitizedUpdates.description;
-      if (sanitizedUpdates.frequency) updateData.frequency = sanitizedUpdates.frequency;
-      if (sanitizedUpdates.startDate) updateData.start_date = sanitizedUpdates.startDate.toISOString().split('T')[0];
-      if (sanitizedUpdates.endDate !== undefined) updateData.end_date = sanitizedUpdates.endDate?.toISOString().split('T')[0];
-      if (sanitizedUpdates.nextOccurrenceDate) updateData.next_occurrence_date = sanitizedUpdates.nextOccurrenceDate.toISOString().split('T')[0];
-      if (sanitizedUpdates.lastProcessedDate !== undefined) updateData.last_processed_date = sanitizedUpdates.lastProcessedDate?.toISOString().split('T')[0];
-      if (sanitizedUpdates.isActive !== undefined) updateData.is_active = sanitizedUpdates.isActive;
-      if (sanitizedUpdates.dayOfWeek !== undefined) updateData.day_of_week = sanitizedUpdates.dayOfWeek;
-      if (sanitizedUpdates.dayOfMonth !== undefined) updateData.day_of_month = sanitizedUpdates.dayOfMonth;
-      if (sanitizedUpdates.monthOfYear !== undefined) updateData.month_of_year = sanitizedUpdates.monthOfYear;
-      if (sanitizedUpdates.maxOccurrences !== undefined) updateData.max_occurrences = sanitizedUpdates.maxOccurrences;
-      if (sanitizedUpdates.currentOccurrences !== undefined) updateData.current_occurrences = toNumber(sanitizedUpdates.currentOccurrences);
+      if (updates.type !== undefined) updateData.type = updates.type;
+      if (updates.amount !== undefined) updateData.amount = updates.amount;
+      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.frequency !== undefined) updateData.frequency = updates.frequency;
+      if (updates.startDate !== undefined) updateData.start_date = updates.startDate.toISOString().split('T')[0];
+      if (updates.endDate !== undefined) updateData.end_date = updates.endDate ? updates.endDate.toISOString().split('T')[0] : null;
+      if (updates.nextOccurrenceDate !== undefined) updateData.next_occurrence_date = updates.nextOccurrenceDate.toISOString().split('T')[0];
+      if (updates.lastProcessedDate !== undefined) updateData.last_processed_date = updates.lastProcessedDate ? updates.lastProcessedDate.toISOString().split('T')[0] : null;
+      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+      if (updates.dayOfWeek !== undefined) updateData.day_of_week = updates.dayOfWeek;
+      if (updates.dayOfMonth !== undefined) updateData.day_of_month = updates.dayOfMonth;
+      if (updates.monthOfYear !== undefined) updateData.month_of_year = updates.monthOfYear;
+      if (updates.maxOccurrences !== undefined) updateData.max_occurrences = updates.maxOccurrences;
+      if (updates.currentOccurrences !== undefined) updateData.current_occurrences = updates.currentOccurrences;
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('recurring_transactions')
+            .update(updateData)
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .select()
+            .single();
+        }, 2, 'Update recurring transaction'),
+        10000,
+        'Update recurring transaction'
+      );
 
-      const { data, error } = await supabase
-        .from('recurring_transactions')
-        .update(updateData)
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .select('id, type, amount, category, description, frequency, start_date, end_date, next_occurrence_date, last_processed_date, is_active, day_of_week, day_of_month, month_of_year, max_occurrences, current_occurrences, created_at')
-        .single();
+      logQueryPerformance('update-recurring-transaction', startTime);
 
       if (error) {
-        console.error('Supabase error updating recurring transaction:', error);
+        console.error('❌ Supabase error updating recurring transaction:', error);
+        console.error('❌ Full error details:', JSON.stringify(error, null, 2));
         throw new Error(`Failed to update recurring transaction: ${error.message}`);
       }
 
-      const updatedRecurringTransaction = formatRecurringTransaction({ ...data, user_id: user.id });
-      setRecurringTransactions(prev => prev.map(rt => rt.id === id ? updatedRecurringTransaction : rt));
-
-      logQueryPerformance('update-recurring-transaction', startTime);
-      showToast('Recurring transaction updated successfully!', 'success');
+      console.log('✅ Recurring transaction updated successfully:', data);
+      
+      // Update local state
+      setRecurringTransactions(prev => prev.map(rt => rt.id === id ? {
+        ...rt,
+        ...updates,
+        startDate: updates.startDate || rt.startDate,
+        endDate: updates.endDate !== undefined ? updates.endDate : rt.endDate,
+        nextOccurrenceDate: updates.nextOccurrenceDate || rt.nextOccurrenceDate,
+        lastProcessedDate: updates.lastProcessedDate !== undefined ? updates.lastProcessedDate : rt.lastProcessedDate,
+      } : rt));
+      
+      showToast('Recurring transaction updated successfully', 'success');
     } catch (error: any) {
-      console.error('Error updating recurring transaction:', error);
+      console.error('❌ Error in updateRecurringTransaction:', error);
       showToast(error.message || 'Failed to update recurring transaction', 'error');
       throw error;
     }
   };
 
-  const deleteRecurringTransaction = async (id: string) => {
+  const updateUserCategory = async (id: string, updates: Partial<UserCategory>): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
-
+    
     try {
-      const startTime = Date.now();
-      
-      const { error } = await supabase
-        .from('recurring_transactions')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Supabase error deleting recurring transaction:', error);
-        throw new Error(`Failed to delete recurring transaction: ${error.message}`);
-      }
-
-      setRecurringTransactions(prev => prev.filter(rt => rt.id !== id));
-
-      logQueryPerformance('delete-recurring-transaction', startTime);
-      showToast('Recurring transaction deleted successfully!', 'success');
-    } catch (error: any) {
-      console.error('Error deleting recurring transaction:', error);
-      showToast(error.message || 'Failed to delete recurring transaction', 'error');
-      throw error;
-    }
-  };
-
-  const updateUserCategory = async (id: string, updates: Partial<UserCategory>) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
+      console.log('🔄 Updating user category:', id, updates);
       const startTime = Date.now();
       
       const updateData: any = {};
-      if (updates.name) updateData.name = updates.name;
-      if (updates.type) updateData.type = updates.type;
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.type !== undefined) updateData.type = updates.type;
       if (updates.icon !== undefined) updateData.icon = updates.icon;
       if (updates.color !== undefined) updateData.color = updates.color;
-
-      const { data, error } = await supabase
-        .from('user_categories')
-        .update(updateData)
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .select('id, name, type, icon, color, created_at, updated_at')
-        .single();
-
-      if (error) {
-        console.error('Supabase error updating user category:', error);
-        throw new Error(`Failed to update category: ${error.message}`);
-      }
-
-      const updatedCategory = formatUserCategory({ ...data, user_id: user.id });
-      setUserCategories(prev => prev.map(c => c.id === id ? updatedCategory : c));
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('user_categories')
+            .update(updateData)
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .select()
+            .single();
+        }, 2, 'Update user category'),
+        10000,
+        'Update user category'
+      );
 
       logQueryPerformance('update-user-category', startTime);
-      showToast('Category updated successfully!', 'success');
+
+      if (error) {
+        console.error('❌ Supabase error updating user category:', error);
+        throw new Error(`Failed to update user category: ${error.message}`);
+      }
+
+      console.log('✅ User category updated successfully:', data);
+      
+      // Update local state immediately
+      setUserCategories(prev => prev.map(c => c.id === id ? {
+        ...c,
+        ...updates,
+        updatedAt: new Date(),
+      } : c));
+      
+      showToast('Category updated successfully', 'success');
+      
+      // Force reload to ensure sync
+      setTimeout(() => {
+        loadUserCategories().catch(console.error);
+      }, 500);
+      
     } catch (error: any) {
-      console.error('Error updating user category:', error);
+      console.error('❌ Error in updateUserCategory:', error);
       showToast(error.message || 'Failed to update category', 'error');
       throw error;
     }
   };
 
-  // Helper function to update budget spent amount with better error handling
-  const updateBudgetSpent = async (category: string, amount: number) => {
-    const budget = budgets.find(b => b.category === category);
-    if (!budget) {
-      console.warn(`Budget category "${category}" not found. Skipping budget update.`);
-      return;
-    }
+  // Delete operations with enhanced error handling
+  const deleteGoal = async (id: string): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
     
     try {
-      const newSpent = toNumber(budget.spent) + toNumber(amount);
-      await updateBudget(budget.id, { spent: newSpent });
-    } catch (error) {
-      console.error('Error updating budget spent amount:', error);
-      // Don't throw here as this is a secondary operation
-    }
-  };
-
-  // Split transaction operations
-  const addSplitTransaction = async (mainTransaction: Omit<Transaction, 'id' | 'userId'>, splits: SplitTransaction[]) => {
-    if (!user) throw new Error('User not authenticated');
-
-    try {
+      console.log('🔄 Deleting goal:', id);
       const startTime = Date.now();
       
-      // First, add the main transaction
-      const mainTransactionData = {
-        user_id: user.id,
-        type: mainTransaction.type,
-        amount: toNumber(mainTransaction.amount),
-        category: 'Split Transaction',
-        description: mainTransaction.description,
-        date: mainTransaction.date.toISOString().split('T')[0],
-      };
+      const { error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('goals')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+        }, 2, 'Delete goal'),
+        10000,
+        'Delete goal'
+      );
 
-      const { data: mainData, error: mainError } = await supabase
-        .from('transactions')
-        .insert([mainTransactionData])
-        .select('id, type, amount, category, description, date')
-        .single();
+      logQueryPerformance('delete-goal', startTime);
 
-      if (mainError) throw mainError;
-
-      // Then add the split transactions
-      const splitTransactionData = splits.map(split => ({
-        user_id: user.id,
-        type: mainTransaction.type,
-        amount: toNumber(split.amount),
-        category: split.category,
-        description: split.description || mainTransaction.description,
-        date: mainTransaction.date.toISOString().split('T')[0],
-        parent_transaction_id: mainData.id,
-      }));
-
-      const { data: splitData, error: splitError } = await supabase
-        .from('transactions')
-        .insert(splitTransactionData)
-        .select('id, type, amount, category, description, date, parent_transaction_id');
-
-      if (splitError) throw splitError;
-
-      // Update local state
-      const newMainTransaction = formatTransaction({ ...mainData, user_id: user.id });
-      const newSplitTransactions = (splitData || []).map(data => formatTransaction({ ...data, user_id: user.id }));
-      
-      setTransactions(prev => [newMainTransaction, ...newSplitTransactions, ...prev]);
-
-      // Update budgets for each split category
-      if (mainTransaction.type === 'expense') {
-        for (const split of splits) {
-          await updateBudgetSpent(split.category, toNumber(split.amount));
-        }
+      if (error) {
+        console.error('❌ Supabase error deleting goal:', error);
+        throw new Error(`Failed to delete goal: ${error.message}`);
       }
 
-      logQueryPerformance('add-split-transaction', startTime);
-      showToast('Split transaction added successfully!', 'success');
+      console.log('✅ Goal deleted successfully');
+      
+      // Update local state
+      setGoals(prev => prev.filter(g => g.id !== id));
+      showToast('Goal deleted successfully', 'success');
     } catch (error: any) {
-      console.error('Error adding split transaction:', error);
-      showToast(error.message || 'Failed to add split transaction', 'error');
+      console.error('❌ Error in deleteGoal:', error);
+      showToast(error.message || 'Failed to delete goal', 'error');
       throw error;
     }
   };
 
-  const getSplitTransactions = (parentId: string): Transaction[] => {
-    return transactions.filter(t => t.parentTransactionId === parentId);
-  };
-
-  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
+  const deleteBudget = async (id: string): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
-
+    
     try {
+      console.log('🔄 Deleting budget:', id);
       const startTime = Date.now();
-      const sanitizedUpdates = sanitizeFinancialData(updates, ['amount']);
       
-      const updateData: any = {};
-      if (sanitizedUpdates.type) updateData.type = sanitizedUpdates.type;
-      if (sanitizedUpdates.amount !== undefined) updateData.amount = toNumber(sanitizedUpdates.amount);
-      if (sanitizedUpdates.category) updateData.category = sanitizedUpdates.category;
-      if (sanitizedUpdates.description) updateData.description = sanitizedUpdates.description;
-      if (sanitizedUpdates.date) updateData.date = sanitizedUpdates.date.toISOString().split('T')[0];
+      const { error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('budgets')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+        }, 2, 'Delete budget'),
+        10000,
+        'Delete budget'
+      );
 
-      const { data, error } = await supabase
-        .from('transactions')
-        .update(updateData)
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .select('id, type, amount, category, description, date, recurring_transaction_id, parent_transaction_id')
-        .single();
+      logQueryPerformance('delete-budget', startTime);
 
       if (error) {
-        console.error('Supabase error updating transaction:', error);
+        console.error('❌ Supabase error deleting budget:', error);
+        throw new Error(`Failed to delete budget: ${error.message}`);
+      }
+
+      console.log('✅ Budget deleted successfully');
+      
+      // Update local state
+      setBudgets(prev => prev.filter(b => b.id !== id));
+      showToast('Budget deleted successfully', 'success');
+    } catch (error: any) {
+      console.error('❌ Error in deleteBudget:', error);
+      showToast(error.message || 'Failed to delete budget', 'error');
+      throw error;
+    }
+  };
+
+  const deleteLiability = async (id: string): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Deleting liability:', id);
+      const startTime = Date.now();
+      
+      const { error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('liabilities')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+        }, 2, 'Delete liability'),
+        10000,
+        'Delete liability'
+      );
+
+      logQueryPerformance('delete-liability', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error deleting liability:', error);
+        throw new Error(`Failed to delete liability: ${error.message}`);
+      }
+
+      console.log('✅ Liability deleted successfully');
+      
+      // Update local state
+      setLiabilities(prev => prev.filter(l => l.id !== id));
+      showToast('Liability deleted successfully', 'success');
+    } catch (error: any) {
+      console.error('❌ Error in deleteLiability:', error);
+      showToast(error.message || 'Failed to delete liability', 'error');
+      throw error;
+    }
+  };
+
+  const deleteRecurringTransaction = async (id: string): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Deleting recurring transaction:', id);
+      const startTime = Date.now();
+      
+      const { error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('recurring_transactions')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+        }, 2, 'Delete recurring transaction'),
+        10000,
+        'Delete recurring transaction'
+      );
+
+      logQueryPerformance('delete-recurring-transaction', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error deleting recurring transaction:', error);
+        throw new Error(`Failed to delete recurring transaction: ${error.message}`);
+      }
+
+      console.log('✅ Recurring transaction deleted successfully');
+      
+      // Update local state
+      setRecurringTransactions(prev => prev.filter(rt => rt.id !== id));
+      showToast('Recurring transaction deleted successfully', 'success');
+    } catch (error: any) {
+      console.error('❌ Error in deleteRecurringTransaction:', error);
+      showToast(error.message || 'Failed to delete recurring transaction', 'error');
+      throw error;
+    }
+  };
+
+  const deleteUserCategory = async (id: string): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Deleting user category:', id);
+      const startTime = Date.now();
+      
+      const { error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('user_categories')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+        }, 2, 'Delete user category'),
+        10000,
+        'Delete user category'
+      );
+
+      logQueryPerformance('delete-user-category', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error deleting user category:', error);
+        throw new Error(`Failed to delete user category: ${error.message}`);
+      }
+
+      console.log('✅ User category deleted successfully');
+      
+      // Update local state immediately
+      setUserCategories(prev => prev.filter(c => c.id !== id));
+      showToast('Category deleted successfully', 'success');
+      
+      // Force reload to ensure sync
+      setTimeout(() => {
+        loadUserCategories().catch(console.error);
+      }, 500);
+      
+    } catch (error: any) {
+      console.error('❌ Error in deleteUserCategory:', error);
+      showToast(error.message || 'Failed to delete category', 'error');
+      throw error;
+    }
+  };
+
+  const updateTransaction = async (id: string, updates: Partial<Transaction>): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Updating transaction:', id, updates);
+      const startTime = Date.now();
+      
+      const updateData: any = {};
+      if (updates.type !== undefined) updateData.type = updates.type;
+      if (updates.amount !== undefined) updateData.amount = updates.amount;
+      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.date !== undefined) updateData.date = updates.date.toISOString().split('T')[0];
+      
+      const { data, error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('transactions')
+            .update(updateData)
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .select()
+            .single();
+        }, 2, 'Update transaction'),
+        10000,
+        'Update transaction'
+      );
+
+      logQueryPerformance('update-transaction', startTime);
+
+      if (error) {
+        console.error('❌ Supabase error updating transaction:', error);
         throw new Error(`Failed to update transaction: ${error.message}`);
       }
 
-      const updatedTransaction = formatTransaction({ ...data, user_id: user.id });
-      setTransactions(prev => prev.map(t => t.id === id ? updatedTransaction : t));
-
-      logQueryPerformance('update-transaction', startTime);
-      showToast('Transaction updated successfully!', 'success');
+      console.log('✅ Transaction updated successfully:', data);
+      
+      // Update local state
+      setTransactions(prev => prev.map(t => t.id === id ? {
+        ...t,
+        ...updates,
+        date: updates.date || t.date,
+      } : t));
+      
+      showToast('Transaction updated successfully', 'success');
     } catch (error: any) {
-      console.error('Error updating transaction:', error);
+      console.error('❌ Error in updateTransaction:', error);
       showToast(error.message || 'Failed to update transaction', 'error');
       throw error;
     }
   };
 
-  const deleteTransaction = async (id: string) => {
+  const deleteTransaction = async (id: string): Promise<void> => {
     if (!user) throw new Error('User not authenticated');
-
+    
     try {
+      console.log('🔄 Deleting transaction:', id);
       const startTime = Date.now();
       
-      const { error } = await supabase
-        .from('transactions')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
+      const { error } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('transactions')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+        }, 2, 'Delete transaction'),
+        10000,
+        'Delete transaction'
+      );
+
+      logQueryPerformance('delete-transaction', startTime);
 
       if (error) {
-        console.error('Supabase error deleting transaction:', error);
+        console.error('❌ Supabase error deleting transaction:', error);
         throw new Error(`Failed to delete transaction: ${error.message}`);
       }
 
+      console.log('✅ Transaction deleted successfully');
+      
+      // Update local state
       setTransactions(prev => prev.filter(t => t.id !== id));
-
-      logQueryPerformance('delete-transaction', startTime);
-      showToast('Transaction deleted successfully!', 'success');
+      showToast('Transaction deleted successfully', 'success');
     } catch (error: any) {
-      console.error('Error deleting transaction:', error);
+      console.error('❌ Error in deleteTransaction:', error);
       showToast(error.message || 'Failed to delete transaction', 'error');
       throw error;
     }
   };
 
-  // Analytics functions (keeping existing implementation)
+  // Helper function to update budget spent amount
+  const updateBudgetSpent = async (category: string, amount: number): Promise<void> => {
+    try {
+      const budget = budgets.find(b => b.category === category);
+      if (!budget) {
+        console.warn(`⚠️ Budget category '${category}' not found for spending update`);
+        return;
+      }
+
+      const newSpent = budget.spent + amount;
+      await updateBudget(budget.id, { spent: newSpent });
+    } catch (error) {
+      console.error('❌ Error updating budget spent:', error);
+      // Don't throw here as this is a secondary operation
+    }
+  };
+
+  // Split transaction implementation
+  const addSplitTransaction = async (
+    mainTransaction: Omit<Transaction, 'id' | 'userId'>, 
+    splits: SplitTransaction[]
+  ): Promise<void> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Adding split transaction:', mainTransaction, splits);
+      const startTime = Date.now();
+      
+      // First, add the main transaction
+      const { data: mainData, error: mainError } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('transactions')
+            .insert([{
+              user_id: user.id,
+              type: mainTransaction.type,
+              amount: mainTransaction.amount,
+              category: 'Split Transaction',
+              description: mainTransaction.description,
+              date: mainTransaction.date.toISOString().split('T')[0],
+            }])
+            .select()
+            .single();
+        }, 2, 'Add main split transaction'),
+        10000,
+        'Add main split transaction'
+      );
+
+      if (mainError) {
+        console.error('❌ Error adding main split transaction:', mainError);
+        throw new Error(`Failed to add split transaction: ${mainError.message}`);
+      }
+
+      console.log('✅ Main split transaction added:', mainData);
+
+      // Then add each split as a child transaction
+      const splitInserts = splits.map(split => ({
+        user_id: user.id,
+        type: mainTransaction.type,
+        amount: split.amount,
+        category: split.category,
+        description: split.description,
+        date: mainTransaction.date.toISOString().split('T')[0],
+        parent_transaction_id: mainData.id,
+      }));
+
+      const { data: splitData, error: splitError } = await withTimeout(
+        withRetry(async () => {
+          return supabase
+            .from('transactions')
+            .insert(splitInserts)
+            .select();
+        }, 2, 'Add split transactions'),
+        10000,
+        'Add split transactions'
+      );
+
+      logQueryPerformance('add-split-transaction', startTime);
+
+      if (splitError) {
+        console.error('❌ Error adding split transactions:', splitError);
+        // Try to clean up the main transaction
+        await supabase.from('transactions').delete().eq('id', mainData.id);
+        throw new Error(`Failed to add split transactions: ${splitError.message}`);
+      }
+
+      console.log('✅ Split transactions added successfully:', splitData);
+
+      // Update local state
+      const newMainTransaction = {
+        ...mainData,
+        date: new Date(mainData.date),
+        createdAt: new Date(mainData.created_at),
+        userId: user.id,
+      };
+
+      const newSplitTransactions = (splitData || []).map(s => ({
+        ...s,
+        date: new Date(s.date),
+        createdAt: new Date(s.created_at),
+        userId: user.id,
+      }));
+
+      setTransactions(prev => [newMainTransaction, ...newSplitTransactions, ...prev]);
+      
+      // Update budgets for each split
+      for (const split of splits) {
+        await updateBudgetSpent(split.category, split.amount);
+      }
+      
+      showToast('Split transaction added successfully', 'success');
+    } catch (error: any) {
+      console.error('❌ Error in addSplitTransaction:', error);
+      showToast(error.message || 'Failed to add split transaction', 'error');
+      throw error;
+    }
+  };
+
+  // Utility functions
+  const searchTransactions = (query: string, filters?: any): Transaction[] => {
+    if (!query && !filters) return transactions;
+    
+    return transactions.filter(transaction => {
+      // Text search
+      if (query) {
+        const searchLower = query.toLowerCase();
+        const matchesSearch = 
+          transaction.description.toLowerCase().includes(searchLower) ||
+          transaction.category.toLowerCase().includes(searchLower);
+        if (!matchesSearch) return false;
+      }
+      
+      // Apply filters if provided
+      if (filters) {
+        if (filters.type && filters.type !== 'all' && transaction.type !== filters.type) {
+          return false;
+        }
+        if (filters.category && transaction.category !== filters.category) {
+          return false;
+        }
+        // Add more filter logic as needed
+      }
+      
+      return true;
+    });
+  };
+
   const getMonthlyTrends = (months: number) => {
     const trends = [];
     const now = new Date();
@@ -1330,11 +1524,11 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       
       const income = monthTransactions
         .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + toNumber(t.amount), 0);
+        .reduce((sum, t) => sum + t.amount, 0);
       
       const expenses = monthTransactions
         .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + toNumber(t.amount), 0);
+        .reduce((sum, t) => sum + t.amount, 0);
       
       trends.push({
         month: date.toLocaleDateString('default', { month: 'short', year: 'numeric' }),
@@ -1351,21 +1545,21 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     const cutoffDate = new Date();
     cutoffDate.setMonth(cutoffDate.getMonth() - months);
     
-    const filteredTransactions = transactions.filter(t => 
+    const relevantTransactions = transactions.filter(t => 
       t.type === type && t.date >= cutoffDate
     );
     
-    const categoryTotals = filteredTransactions.reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + toNumber(t.amount);
+    const categoryTotals = relevantTransactions.reduce((acc, t) => {
+      acc[t.category] = (acc[t.category] || 0) + t.amount;
       return acc;
     }, {} as Record<string, number>);
-    
+
     const total = Object.values(categoryTotals).reduce((sum, amount) => sum + amount, 0);
     
     return Object.entries(categoryTotals).map(([category, amount]) => ({
       category,
       amount,
-      percentage: total > 0 ? calculatePercentage(amount, total) : 0
+      percentage: total > 0 ? (amount / total) * 100 : 0
     }));
   };
 
@@ -1375,26 +1569,26 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     
     for (let i = months - 1; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0);
       
       // Calculate cumulative values up to this month
-      const transactionsUpToDate = transactions.filter(t => t.date <= date);
-      const goalsUpToDate = goals.filter(g => g.createdAt <= date);
-      const liabilitiesUpToDate = liabilities.filter(l => l.createdAt <= date);
+      const cumulativeTransactions = transactions.filter(t => t.date <= endDate);
+      const cumulativeGoals = goals.filter(g => g.createdAt <= endDate);
+      const cumulativeLiabilities = liabilities.filter(l => l.createdAt <= endDate);
       
-      const liquidAssets = transactionsUpToDate
-        .reduce((sum, t) => sum + (t.type === 'income' ? toNumber(t.amount) : -toNumber(t.amount)), 0);
+      const liquidAssets = cumulativeTransactions
+        .filter(t => t.type === 'income')
+        .reduce((sum, t) => sum + t.amount, 0) - 
+        cumulativeTransactions
+        .filter(t => t.type === 'expense')
+        .reduce((sum, t) => sum + t.amount, 0);
       
-      const goalSavings = goalsUpToDate
-        .reduce((sum, g) => sum + toNumber(g.currentAmount), 0);
-      
-      const totalLiabilities = liabilitiesUpToDate
-        .reduce((sum, l) => sum + toNumber(l.remainingAmount), 0);
-      
-      const netWorth = liquidAssets + goalSavings - totalLiabilities;
+      const goalSavings = cumulativeGoals.reduce((sum, g) => sum + g.currentAmount, 0);
+      const totalLiabilities = cumulativeLiabilities.reduce((sum, l) => sum + l.remainingAmount, 0);
       
       trends.push({
         month: date.toLocaleDateString('default', { month: 'short', year: 'numeric' }),
-        netWorth,
+        netWorth: liquidAssets + goalSavings - totalLiabilities,
         liquidAssets,
         goalSavings,
         totalLiabilities
@@ -1404,9 +1598,87 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     return trends;
   };
 
-  // Enhanced debt repayment strategy with dynamic redistribution
-  const calculateDebtRepaymentStrategy = (strategy: 'snowball' | 'avalanche', extraPayment: number): DebtRepaymentStrategy => {
-    const activeDebts = liabilities.filter(l => toNumber(l.remainingAmount) > 0);
+  const getSplitTransactions = (parentId: string): Transaction[] => {
+    return transactions.filter(t => t.parentTransactionId === parentId);
+  };
+
+  const getTransactionsPaginated = async (
+    page: number, 
+    pageSize: number, 
+    filters?: any
+  ): Promise<{ data: Transaction[]; count: number }> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      console.log('🔄 Loading paginated transactions:', { page, pageSize, filters });
+      const startTime = Date.now();
+      
+      let query = supabase
+        .from('transactions')
+        .select('*', { count: 'exact' })
+        .eq('user_id', user.id);
+
+      // Apply filters
+      if (filters?.type && filters.type !== 'all') {
+        query = query.eq('type', filters.type);
+      }
+      if (filters?.category) {
+        query = query.eq('category', filters.category);
+      }
+      if (filters?.search) {
+        query = query.or(`description.ilike.%${filters.search}%,category.ilike.%${filters.search}%`);
+      }
+
+      // Apply pagination and ordering
+      query = query
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      const { data, error, count } = await withTimeout(query, 8000, 'Paginated transactions');
+
+      logQueryPerformance('paginated-transactions', startTime);
+
+      if (error) {
+        console.error('❌ Error loading paginated transactions:', error);
+        throw new Error(`Failed to load transactions: ${error.message}`);
+      }
+
+      const formattedData = (data || []).map(t => ({
+        ...t,
+        date: new Date(t.date),
+        createdAt: new Date(t.created_at),
+        userId: user.id,
+      }));
+
+      console.log(`✅ Loaded ${formattedData.length} transactions (page ${page + 1})`);
+      
+      return { data: formattedData, count: count || 0 };
+    } catch (error: any) {
+      console.error('❌ Error in getTransactionsPaginated:', error);
+      throw error;
+    }
+  };
+
+  // Calculate dashboard stats
+  const stats: DashboardStats = {
+    totalIncome: transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0),
+    totalExpenses: transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0),
+    totalSavings: goals.reduce((sum, g) => sum + g.currentAmount, 0),
+    totalLiabilities: liabilities.reduce((sum, l) => sum + l.remainingAmount, 0),
+    monthlyIncome: getMonthlyTrends(1)[0]?.income || 0,
+    monthlyExpenses: getMonthlyTrends(1)[0]?.expenses || 0,
+    budgetUtilization: budgets.length > 0 
+      ? budgets.reduce((sum, b) => sum + (b.spent / b.amount * 100), 0) / budgets.length 
+      : 0,
+  };
+
+  // Debt repayment strategy calculation
+  const calculateDebtRepaymentStrategy = (
+    strategy: 'snowball' | 'avalanche', 
+    extraPayment: number
+  ): DebtRepaymentStrategy => {
+    const activeDebts = liabilities.filter(l => l.remainingAmount > 0);
     
     if (activeDebts.length === 0) {
       return {
@@ -1420,186 +1692,85 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
 
     // Sort debts based on strategy
     const sortedDebts = [...activeDebts].sort((a, b) => {
-      if (strategy === 'avalanche') {
-        return toNumber(b.interestRate) - toNumber(a.interestRate);
+      if (strategy === 'snowball') {
+        return a.remainingAmount - b.remainingAmount; // Smallest first
       } else {
-        return toNumber(a.remainingAmount) - toNumber(b.remainingAmount);
+        return b.interestRate - a.interestRate; // Highest interest first
       }
     });
 
-    // Enhanced calculation with dynamic extra payment redistribution
-    const debtPlans = [];
-    let remainingExtraPayment = toNumber(extraPayment);
+    const debtPlans: any[] = [];
+    let totalInterestPaid = 0;
+    let totalPaid = 0;
     let currentDate = new Date();
-    
-    for (let i = 0; i < sortedDebts.length; i++) {
-      const debt = sortedDebts[i];
-      const remainingAmount = toNumber(debt.remainingAmount);
-      const baseMonthlyPayment = toNumber(debt.monthlyPayment);
-      const currentExtraPayment = i === 0 ? remainingExtraPayment : 0; // Apply extra to current priority debt
-      const totalMonthlyPayment = baseMonthlyPayment + currentExtraPayment;
-      const interestRate = toNumber(debt.interestRate) / 100 / 12;
-      
-      if (totalMonthlyPayment <= 0 || remainingAmount <= 0) {
-        debtPlans.push({
-          id: debt.id,
-          name: debt.name,
-          remainingAmount,
-          interestRate: toNumber(debt.interestRate),
-          monthlyPayment: totalMonthlyPayment,
-          payoffDate: new Date(),
-          totalInterest: 0,
-          payments: []
-        });
-        continue;
-      }
+    let availableExtraPayment = extraPayment;
 
-      let balance = remainingAmount;
+    // Calculate payoff for each debt
+    sortedDebts.forEach((debt, index) => {
+      let balance = debt.remainingAmount;
+      let monthlyPayment = debt.monthlyPayment;
       let totalInterest = 0;
       const payments = [];
-      let monthDate = new Date(currentDate);
-
-      while (balance > 0.01 && payments.length < 600) { // Cap at 50 years
-        const interestPayment = balance * interestRate;
-        const principalPayment = Math.min(totalMonthlyPayment - interestPayment, balance);
+      
+      // Add extra payment to current debt being focused on
+      if (index === 0) {
+        monthlyPayment += availableExtraPayment;
+      }
+      
+      const monthlyInterestRate = debt.interestRate / 100 / 12;
+      let paymentDate = new Date(currentDate);
+      
+      while (balance > 0.01) {
+        const interestPayment = balance * monthlyInterestRate;
+        const principalPayment = Math.min(monthlyPayment - interestPayment, balance);
         
-        if (principalPayment <= 0) break;
+        if (principalPayment <= 0) break; // Payment too small to cover interest
         
         balance -= principalPayment;
         totalInterest += interestPayment;
         
         payments.push({
-          date: new Date(monthDate),
-          payment: totalMonthlyPayment,
+          date: new Date(paymentDate),
+          payment: monthlyPayment,
           principal: principalPayment,
           interest: interestPayment,
           remainingBalance: balance
         });
         
-        monthDate = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, monthDate.getDate());
+        paymentDate.setMonth(paymentDate.getMonth() + 1);
       }
-
+      
       debtPlans.push({
         id: debt.id,
         name: debt.name,
-        remainingAmount,
-        interestRate: toNumber(debt.interestRate),
-        monthlyPayment: totalMonthlyPayment,
-        payoffDate: payments.length > 0 ? payments[payments.length - 1].date : new Date(),
+        remainingAmount: debt.remainingAmount,
+        interestRate: debt.interestRate,
+        monthlyPayment: monthlyPayment,
+        payoffDate: paymentDate,
         totalInterest,
         payments
       });
       
-      // When this debt is paid off, redistribute extra payment to next debt
-      if (balance <= 0.01 && i < sortedDebts.length - 1) {
-        remainingExtraPayment += baseMonthlyPayment; // Add this debt's payment to extra for next debt
-      }
-    }
-
-    const totalMonths = Math.max(...debtPlans.map(plan => plan.payments.length));
-    const totalInterestPaid = debtPlans.reduce((sum, plan) => sum + plan.totalInterest, 0);
-    const totalPaid = debtPlans.reduce((sum, plan) => sum + plan.remainingAmount + plan.totalInterest, 0);
-    const payoffDate = new Date(Math.max(...debtPlans.map(plan => plan.payoffDate.getTime())));
+      totalInterestPaid += totalInterest;
+      totalPaid += debt.remainingAmount + totalInterest;
+      
+      // After this debt is paid off, add its payment to extra payment pool
+      availableExtraPayment += debt.monthlyPayment;
+      currentDate = paymentDate;
+    });
 
     return {
-      totalMonths,
+      totalMonths: Math.max(...debtPlans.map(p => p.payments.length)),
       totalInterestPaid,
       totalPaid,
-      payoffDate,
+      payoffDate: new Date(Math.max(...debtPlans.map(p => p.payoffDate.getTime()))),
       debtPlans
     };
   };
 
-  // AI and insights functions
-  const getFinancialForecast = async () => {
-    try {
-      const startTime = Date.now();
-      const financialData = {
-        monthlyIncome: stats.monthlyIncome,
-        monthlyExpenses: stats.monthlyExpenses,
-        totalSavings: stats.totalSavings,
-        totalLiabilities: stats.totalLiabilities,
-        netWorth: stats.totalIncome - stats.totalExpenses - stats.totalLiabilities,
-        savingsRate: stats.monthlyIncome > 0 ? ((stats.monthlyIncome - stats.monthlyExpenses) / stats.monthlyIncome) * 100 : 0,
-        debtToIncomeRatio: stats.monthlyIncome > 0 ? stats.totalLiabilities / (stats.monthlyIncome * 12) : 0,
-        budgetUtilization: stats.budgetUtilization,
-        goals: goals.map(g => ({
-          id: g.id,
-          title: g.title,
-          targetAmount: g.targetAmount,
-          currentAmount: g.currentAmount,
-          targetDate: g.targetDate.toISOString()
-        })),
-        liabilities: liabilities.map(l => ({
-          id: l.id,
-          name: l.name,
-          remainingAmount: l.remainingAmount,
-          interestRate: l.interestRate,
-          monthlyPayment: l.monthlyPayment
-        }))
-      };
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/financial-forecaster`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ financialData }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const result = await response.json();
-      logQueryPerformance('financial-forecast', startTime);
-      return result;
-    } catch (error) {
-      console.error('Error fetching financial forecast:', error);
-      throw error;
-    }
-  };
-
-  const refreshInsights = async () => {
-    try {
-      const startTime = Date.now();
-      const financialData = {
-        monthlyIncome: stats.monthlyIncome,
-        monthlyExpenses: stats.monthlyExpenses,
-        totalSavings: stats.totalSavings,
-        totalLiabilities: stats.totalLiabilities,
-        netWorth: stats.totalIncome - stats.totalExpenses - stats.totalLiabilities,
-        savingsRate: stats.monthlyIncome > 0 ? ((stats.monthlyIncome - stats.monthlyExpenses) / stats.monthlyIncome) * 100 : 0,
-        budgetUtilization: stats.budgetUtilization,
-        topExpenseCategories: getCategoryBreakdown('expense', 3).slice(0, 5)
-      };
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/financial-insights`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ financialData }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const newInsights = await response.json();
-      setInsights(newInsights);
-      logQueryPerformance('refresh-insights', startTime);
-    } catch (error) {
-      console.error('Error refreshing insights:', error);
-      throw error;
-    }
-  };
-
-  // Data management functions
+  // Export/Import functionality
   const exportData = async (format: 'json' | 'csv'): Promise<string> => {
-    const data = {
+    const exportData = {
       transactions,
       goals,
       liabilities,
@@ -1607,13 +1778,13 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       recurringTransactions,
       userCategories,
       exportDate: new Date().toISOString(),
-      version: '1.0.0'
+      version: '1.0'
     };
 
     if (format === 'json') {
-      return JSON.stringify(data, null, 2);
+      return JSON.stringify(exportData, null, 2);
     } else {
-      // CSV export (transactions only for simplicity)
+      // CSV export for transactions only
       const headers = ['Date', 'Type', 'Amount', 'Category', 'Description'];
       const rows = transactions.map(t => [
         t.date.toISOString().split('T')[0],
@@ -1628,90 +1799,88 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
   };
 
   const importData = async (data: string, format: 'json' | 'csv'): Promise<void> => {
+    // Implementation would depend on specific import requirements
+    throw new Error('Import functionality not yet implemented');
+  };
+
+  const getFinancialForecast = async (): Promise<any> => {
     try {
-      if (format === 'json') {
-        const parsedData = JSON.parse(data);
-        
-        // Import transactions
-        if (parsedData.transactions) {
-          for (const transaction of parsedData.transactions) {
-            await addTransaction({
-              type: transaction.type,
-              amount: toNumber(transaction.amount),
-              category: transaction.category,
-              description: transaction.description,
-              date: new Date(transaction.date)
-            });
-          }
-        }
-        
-        // Import goals
-        if (parsedData.goals) {
-          for (const goal of parsedData.goals) {
-            await addGoal({
-              title: goal.title,
-              description: goal.description,
-              targetAmount: toNumber(goal.targetAmount),
-              currentAmount: toNumber(goal.currentAmount),
-              targetDate: new Date(goal.targetDate),
-              category: goal.category
-            });
-          }
-        }
-      } else {
-        // CSV import (transactions only)
-        const lines = data.split('\n');
-        const headers = lines[0].split(',');
-        
-        for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(',');
-          if (values.length >= 5) {
-            await addTransaction({
-              type: values[1] as 'income' | 'expense',
-              amount: toNumber(values[2]),
-              category: values[3],
-              description: values[4],
-              date: new Date(values[0])
-            });
-          }
-        }
+      console.log('🔄 Generating financial forecast...');
+      
+      const financialData = {
+        netWorth: stats.totalIncome - stats.totalExpenses - stats.totalLiabilities,
+        monthlyIncome: stats.monthlyIncome,
+        monthlyExpenses: stats.monthlyExpenses,
+        totalSavings: stats.totalSavings,
+        totalLiabilities: stats.totalLiabilities,
+        savingsRate: stats.monthlyIncome > 0 ? ((stats.monthlyIncome - stats.monthlyExpenses) / stats.monthlyIncome) * 100 : 0,
+        debtToIncomeRatio: stats.monthlyIncome > 0 ? stats.totalLiabilities / (stats.monthlyIncome * 12) : 0,
+        budgetUtilization: stats.budgetUtilization,
+        goals,
+        liabilities,
+        monthlyTrends: getMonthlyTrends(6)
+      };
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/financial-forecaster`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ financialData }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Forecast API error: ${response.status}`);
       }
-    } catch (error) {
-      console.error('Error importing data:', error);
+
+      const forecast = await response.json();
+      console.log('✅ Financial forecast generated:', forecast);
+      
+      return forecast;
+    } catch (error: any) {
+      console.error('❌ Error generating financial forecast:', error);
       throw error;
     }
   };
 
-  // Calculate dashboard stats
-  const stats: DashboardStats = {
-    totalIncome: transactions
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + toNumber(t.amount), 0),
-    totalExpenses: transactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + toNumber(t.amount), 0),
-    totalSavings: goals.reduce((sum, g) => sum + toNumber(g.currentAmount), 0),
-    totalLiabilities: liabilities.reduce((sum, l) => sum + toNumber(l.remainingAmount), 0),
-    monthlyIncome: (() => {
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      return transactions
-        .filter(t => t.type === 'income' && t.date.getMonth() === currentMonth && t.date.getFullYear() === currentYear)
-        .reduce((sum, t) => sum + toNumber(t.amount), 0);
-    })(),
-    monthlyExpenses: (() => {
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      return transactions
-        .filter(t => t.type === 'expense' && t.date.getMonth() === currentMonth && t.date.getFullYear() === currentYear)
-        .reduce((sum, t) => sum + toNumber(t.amount), 0);
-    })(),
-    budgetUtilization: (() => {
-      if (budgets.length === 0) return 0;
-      const totalBudgeted = budgets.reduce((sum, b) => sum + toNumber(b.amount), 0);
-      const totalSpent = budgets.reduce((sum, b) => sum + toNumber(b.spent), 0);
-      return totalBudgeted > 0 ? calculatePercentage(totalSpent, totalBudgeted) : 0;
-    })(),
+  const refreshInsights = async (): Promise<void> => {
+    try {
+      console.log('🔄 Refreshing financial insights...');
+      
+      const financialData = {
+        monthlyIncome: stats.monthlyIncome,
+        monthlyExpenses: stats.monthlyExpenses,
+        totalSavings: stats.totalSavings,
+        totalLiabilities: stats.totalLiabilities,
+        savingsRate: stats.monthlyIncome > 0 ? ((stats.monthlyIncome - stats.monthlyExpenses) / stats.monthlyIncome) * 100 : 0,
+        budgetUtilization: stats.budgetUtilization,
+        netWorth: stats.totalIncome - stats.totalExpenses - stats.totalLiabilities,
+        expenseBreakdown: getCategoryBreakdown('expense', 3),
+        incomeBreakdown: getCategoryBreakdown('income', 3),
+      };
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/financial-insights`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ financialData }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Insights API error: ${response.status}`);
+      }
+
+      const newInsights = await response.json();
+      console.log('✅ Financial insights refreshed:', newInsights);
+      
+      setInsights(newInsights);
+    } catch (error: any) {
+      console.error('❌ Error refreshing insights:', error);
+      throw error;
+    }
   };
 
   const value = {
@@ -1724,60 +1893,47 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     userCategories,
     stats,
     loading,
+    insights,
     
-    // Transaction operations
+    // CRUD Operations
     addTransaction,
     updateTransaction,
     deleteTransaction,
     addSplitTransaction,
-    getSplitTransactions,
-    searchTransactions,
-    getTransactionsPaginated,
     
-    // Goal operations
     addGoal,
     updateGoal,
     deleteGoal,
     
-    // Liability operations
     addLiability,
     updateLiability,
     deleteLiability,
     
-    // Budget operations
     addBudget,
     updateBudget,
     deleteBudget,
     
-    // Recurring transaction operations
     addRecurringTransaction,
     updateRecurringTransaction,
     deleteRecurringTransaction,
     
-    // Category operations
     addUserCategory,
     updateUserCategory,
     deleteUserCategory,
     
-    // Analytics
+    // Utility functions
+    searchTransactions,
     getMonthlyTrends,
     getCategoryBreakdown,
     getNetWorthTrends,
+    getSplitTransactions,
+    getTransactionsPaginated,
     calculateDebtRepaymentStrategy,
-    
-    // AI and insights
-    getFinancialForecast,
-    insights,
-    refreshInsights,
-    
-    // Data management
     exportData,
     importData,
+    getFinancialForecast,
+    refreshInsights,
   };
 
-  return (
-    <FinanceContext.Provider value={value}>
-      {children}
-    </FinanceContext.Provider>
-  );
+  return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 };

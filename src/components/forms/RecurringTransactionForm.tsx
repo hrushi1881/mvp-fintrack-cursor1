@@ -121,6 +121,7 @@ export const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> =
 
   const handleFormSubmit = (data: RecurringTransactionFormData) => {
     try {
+      console.log('🔄 RecurringTransactionForm submitting:', data);
     const startDate = new Date(data.startDate);
     const nextOccurrenceDate = calculateNextOccurrence(
       startDate, 
@@ -141,11 +142,12 @@ export const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> =
       lastProcessedDate: undefined,
     };
     
+      console.log('🔄 Formatted data for submission:', formattedData);
     // Submit the data to parent component
     onSubmit(formattedData);
     } catch (error) {
       console.error("Error in form submission:", error);
-      // Display error or handle it appropriately
+      // Error will be handled by parent component
     }
   };
 

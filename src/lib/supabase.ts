@@ -5,8 +5,13 @@ import type { Database } from '../types/supabase';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables. Please check your .env file.');
+// Production-safe environment variable validation
+if (!supabaseUrl) {
+  throw new Error('VITE_SUPABASE_URL is required. Please check your environment configuration.');
+}
+
+if (!supabaseAnonKey) {
+  throw new Error('VITE_SUPABASE_ANON_KEY is required. Please check your environment configuration.');
 }
 
 console.log('Initializing Supabase client with URL:', supabaseUrl);

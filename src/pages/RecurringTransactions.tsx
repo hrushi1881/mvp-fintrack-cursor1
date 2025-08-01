@@ -22,20 +22,25 @@ export const RecurringTransactions: React.FC = () => {
 
   const handleAddRecurringTransaction = (data: any) => {
     try {
+      console.log('🔄 Form submitting recurring transaction:', data);
       await addRecurringTransaction(data);
+      console.log('✅ Form submission completed successfully');
       setShowModal(false);
       
       // Invalidate related queries
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
     } catch (error) {
       console.error('Error adding recurring transaction:', error);
+      // Error is already handled in FinanceContext with toast
     }
   };
 
   const handleEditRecurringTransaction = (data: any) => {
     try {
+      console.log('🔄 Form updating recurring transaction:', editingTransaction, data);
       if (editingTransaction) {
         await updateRecurringTransaction(editingTransaction, data);
+        console.log('✅ Form update completed successfully');
         setEditingTransaction(null);
         setShowModal(false);
         
@@ -44,29 +49,36 @@ export const RecurringTransactions: React.FC = () => {
       }
     } catch (error) {
       console.error('Error updating recurring transaction:', error);
+      // Error is already handled in FinanceContext with toast
     }
   };
 
   const handleToggleActive = (id: string, isActive: boolean) => {
     try {
+      console.log('🔄 Toggling recurring transaction active state:', id, !isActive);
       await updateRecurringTransaction(id, { isActive: !isActive });
+      console.log('✅ Toggle completed successfully');
       
       // Invalidate related queries
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
     } catch (error) {
       console.error('Error toggling recurring transaction:', error);
+      // Error is already handled in FinanceContext with toast
     }
   };
 
   const handleDelete = (id: string) => {
     if (confirm('Are you sure you want to delete this recurring transaction?')) {
       try {
+        console.log('🔄 Deleting recurring transaction:', id);
         await deleteRecurringTransaction(id);
+        console.log('✅ Delete completed successfully');
         
         // Invalidate related queries
         queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
       } catch (error) {
         console.error('Error deleting recurring transaction:', error);
+        // Error is already handled in FinanceContext with toast
       }
     }
   };
