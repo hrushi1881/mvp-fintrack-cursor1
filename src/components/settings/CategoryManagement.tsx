@@ -70,16 +70,16 @@ queryClient.invalidateQueries({ queryKey: ['user-categories'] });
     if (!editingCategoryId) return;
     
     try {
-      setError(null);
-      await updateUserCategory(editingCategoryId, data);
-      setEditingCategoryId(null);
-      reset();
-      
-      // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
-    } catch (error: any) {
-      setError(error.message || 'Failed to update category');
-    };
+  setError(null);
+  await addUserCategory(data);
+  setShowAddForm(false);
+  reset();
+
+  // Invalidate related queries
+  queryClient.invalidateQueries({ queryKey: ['user-categories'] }); // ✅ Ends with semicolon
+} catch (error: any) {
+  setError(error.message || 'Failed to add category');
+}
   
 
   const handleDeleteCategory = async (id: string) => {
