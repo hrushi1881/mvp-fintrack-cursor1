@@ -565,21 +565,33 @@ export const TransactionHistory: React.FC = () => {
           </div>
         ) : (
 
-        {/* Pagination Controls */}
-        {!hasActiveFilters && totalCount > pageSize && (
-          <div className="flex items-center justify-between mt-6 p-4 bg-black/20 backdrop-blur-md rounded-xl border border-white/10">
-            <div className="flex items-center space-x-2">
-              <Button
-                onClick={() => setPage(Math.max(0, page - 1))}
-                disabled={!hasPreviousPage || isLoading}
-                variant="outline"
-                size="sm"
-              >
+       {/* Pagination Controls */}
+{!hasActiveFilters && totalCount > pageSize && (
+  <div className="flex items-center justify-between mt-6 p-4 bg-black/20 backdrop-blur-md rounded-xl border border-white/10">
+    <div className="flex items-center space-x-2">
+      <Button
+        onClick={() => setPage(Math.max(0, page - 1))}
+        disabled={!hasPreviousPage || isLoading}
+        variant="outline"
+        size="sm"
+      >
+        Previous
+      </Button>
+      <span className="text-sm text-white/80">
+        Page {page + 1} of {Math.ceil(totalCount / pageSize)}
+      </span>
+      <Button
+        onClick={() => setPage(page + 1)}
+        disabled={!hasNextPage || isLoading}
+        variant="outline"
+        size="sm"
+      >
         Next
       </Button>
     </div>
   </div>
 )}
+
                 Previous
               </Button>
               <span className="text-sm text-gray-400">
