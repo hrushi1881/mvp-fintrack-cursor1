@@ -35,7 +35,7 @@ export const RecurringTransactions: React.FC = () => {
     }
   };
 
-  const handleEditRecurringTransaction = (data: any) => {
+  const handleEditRecurringTransaction = async (data: any) => {
     try {
       console.log('🔄 Form updating recurring transaction:', editingTransaction, data);
       if (editingTransaction) {
