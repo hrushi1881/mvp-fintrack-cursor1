@@ -6,6 +6,7 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { useFinance } from '../../contexts/FinanceContext';
 import { UserCategory } from '../../types';
+export default CategoryManagement;
 
 interface CategoryFormData {
   name: string;
@@ -425,4 +426,3 @@ try {
     </div>
     );
 };
-export default CategoryManagement;
