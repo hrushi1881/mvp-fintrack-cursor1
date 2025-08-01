@@ -63,7 +63,7 @@ export const RecurringTransactions: React.FC = () => {
       // Invalidate related queries
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
       
-    } catch (error) 
+    { catch (error) 
       console.error('Error toggling recurring transaction:', error);
       // Error is already handled in FinanceContext with toast
     }
