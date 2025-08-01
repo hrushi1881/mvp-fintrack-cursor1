@@ -59,12 +59,12 @@ export const CategoryManagement: React.FC = () => {
   }
 };
 
-    // Invalidate related queries
-    queryClient.invalidateQueries({ queryKey: ['user-categories'] });
-  } catch (error: any) {
-    setError(error.message || 'Failed to add category');
-  }
-};
+ // Invalidate related queries
+queryClient.invalidateQueries({ queryKey: ['user-categories'] }); // ✅ Correct line
+} catch (error: any) {
+  setError(error.message || 'Failed to add category');
+}
+
 
   const handleUpdateCategory = (data: CategoryFormData) => {
     if (!editingCategoryId) return;
