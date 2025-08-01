@@ -424,4 +424,5 @@ try {
       </div>
     </div>
     );
-}
+};
+export default CategoryManagement;
