@@ -20,7 +20,7 @@ export const RecurringTransactions: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<string | null>(null);
 
-  const handleAddRecurringTransaction = (data: any) => {
+  const handleAddRecurringTransaction = async (data: any) => {
     try {
       console.log('🔄 Form submitting recurring transaction:', data);
       await addRecurringTransaction(data);
