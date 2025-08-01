@@ -575,6 +575,11 @@ export const TransactionHistory: React.FC = () => {
                 variant="outline"
                 size="sm"
               >
+        Next
+      </Button>
+    </div>
+  </div>
+)}
                 Previous
               </Button>
               <span className="text-sm text-gray-400">
