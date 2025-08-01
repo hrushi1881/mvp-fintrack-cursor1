@@ -63,7 +63,7 @@ export const CategoryManagement: React.FC = () => {
 queryClient.invalidateQueries({ queryKey: ['user-categories'] }); 
 } catch (error: any) {
   setError(error.message || 'Failed to add category');
-}
+};
 
 
   const handleUpdateCategory = async (data: CategoryFormData) => {
