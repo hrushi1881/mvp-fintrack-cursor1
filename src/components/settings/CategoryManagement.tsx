@@ -47,19 +47,19 @@ export const CategoryManagement: React.FC = () => {
     '#6B7280', // gray
   ];
 
-  const handleAddCategory = (data: CategoryFormData) => {
-    try {
-      setError(null);
-      await addUserCategory(data);
-      setShowAddForm(false);
-      reset();
-      
-      // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
-    } catch (error: any) {
-      setError(error.message || 'Failed to add category');
-    }
-  };
+ const handleAddCategory = async (data: CategoryFormData) => {
+  try {
+    setError(null);
+    await addUserCategory(data);
+    setShowAddForm(false);
+    reset();
+
+    // Invalidate related queries
+    queryClient.invalidateQueries({ queryKey: ['user-categories'] });
+  } catch (error: any) {
+    setError(error.message || 'Failed to add category');
+  }
+};
 
   const handleUpdateCategory = (data: CategoryFormData) => {
     if (!editingCategoryId) return;
