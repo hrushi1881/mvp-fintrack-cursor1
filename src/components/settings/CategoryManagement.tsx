@@ -57,7 +57,7 @@ export const CategoryManagement: React.FC = () => {
   } catch (error: any) {
     setError(error.message || 'Failed to add category');
   }
-};
+
 
 try {
   setError(null);
