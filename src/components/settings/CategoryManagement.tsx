@@ -59,7 +59,11 @@ export const CategoryManagement: React.FC = () => {
   }
 };
 
-
+try {
+  setError(null);
+  await addUserCategory(data);
+  setShowAddForm(false);
+  reset();
 
   // Invalidate related queries
   queryClient.invalidateQueries({ queryKey: ['user-categories'] });
