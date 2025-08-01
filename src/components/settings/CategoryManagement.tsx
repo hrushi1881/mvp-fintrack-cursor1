@@ -77,9 +77,10 @@ queryClient.invalidateQueries({ queryKey: ['user-categories'] });
 
   // Invalidate related queries
   queryClient.invalidateQueries({ queryKey: ['user-categories'] }); // ✅ Ends with semicolon
-} catch (error: any) {
+   catch (error: any) {
   setError(error.message || 'Failed to add category');
 }
+  };
   
 
   const handleDeleteCategory = async (id: string) => {
