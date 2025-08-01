@@ -79,8 +79,8 @@ queryClient.invalidateQueries({ queryKey: ['user-categories'] });
       queryClient.invalidateQueries({ queryKey: ['user-categories'] });
     } catch (error: any) {
       setError(error.message || 'Failed to update category');
-    }
-  };
+    };
+  
 
   const handleDeleteCategory = async (id: string) => {
     try {
