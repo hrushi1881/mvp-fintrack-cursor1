@@ -76,7 +76,7 @@ queryClient.invalidateQueries({ queryKey: ['user-categories'] });
       reset();
       
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
+      queryClient.invalidateQueries({ queryKey: ['user-categories'] })
     } catch (error: any) {
       setError(error.message || 'Failed to update category');
     };
