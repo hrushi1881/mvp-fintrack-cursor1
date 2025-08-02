@@ -15,6 +15,7 @@ import { NotificationsPanel } from '../components/common/NotificationsPanel';
 import { ProfileMenu } from '../components/common/ProfileMenu';
 import { useFinance } from '../contexts/FinanceContext';
 import { useAuth } from '../contexts/AuthContext';
+import { usePersonalization } from '../contexts/PersonalizationContext';
 import { useInternationalization } from '../contexts/InternationalizationContext';
 import { Button } from '../components/common/Button';
 import { FinancialForecast } from '../components/dashboard/FinancialForecast';
@@ -22,6 +23,7 @@ import { FinancialForecast } from '../components/dashboard/FinancialForecast';
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, startOnboarding } = useAuth();
+  const { settings, getDashboardComponents, shouldShowTutorial } = usePersonalization();
   const { stats, transactions, addGoal, addLiability, addTransaction, addRecurringTransaction, loading, getMonthlyTrends } = useFinance();
   const { formatCurrency } = useInternationalization();
   const { t } = useTranslation();
@@ -81,6 +83,8 @@ export const Dashboard: React.FC = () => {
 
   // Show welcome message for new users
   const isNewUser = transactions.length === 0;
+  const dashboardComponents = getDashboardComponents();
+  const showTutorial = shouldShowTutorial('dashboard');
 
   // Get monthly trends for mini chart
   const monthlyTrends = getMonthlyTrends(3);
@@ -216,12 +220,24 @@ export const Dashboard: React.FC = () => {
                 <Users size={24} className="text-primary-400" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-white mb-2">Welcome to Finspire! 🎉</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Welcome to your personalized Finspire! 🎉
+                </h3>
                 <p className="text-primary-100 text-sm mb-4">
-                  You're all set up! Start by adding your first transaction or setting up a financial goal. 
-                  Your journey to better financial management begins now.
+                  Based on your profile as a {settings.userTypes.join(' and ')}, we've customized your dashboard 
+                  to focus on {settings.primaryFocus.slice(0, 2).join(' and ')}. 
+                  {showTutorial && ' Take a quick tour to get started!'}
                 </p>
                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                  {showTutorial && (
+                    <button
+                      onClick={() => {/* Start tutorial */}}
+                      className="bg-yellow-500 text-yellow-900 py-2 px-4 rounded-lg font-medium hover:bg-yellow-400 transition-colors text-sm flex items-center justify-center"
+                    >
+                      <span className="mr-2">📚</span>
+                      Quick Tour
+                    </button>
+                  )}
                   <button
                     onClick={() => navigate('/add-transaction')}
                     className="bg-white text-primary-600 py-2 px-4 rounded-lg font-medium hover:bg-primary-50 transition-colors text-sm flex items-center justify-center"
@@ -303,13 +319,15 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* AI Financial Forecast Button */}
-        <Button
-          onClick={() => setShowForecast(!showForecast)}
-          className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 py-3"
-        >
-          <Zap size={18} className="mr-2" />
-          {showForecast ? 'Hide AI Financial Forecast' : 'Show AI Financial Forecast'}
-        </Button>
+        {dashboardComponents.includes('ai_forecast') && (
+          <Button
+            onClick={() => setShowForecast(!showForecast)}
+            className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 py-3"
+          >
+            <Zap size={18} className="mr-2" />
+            {showForecast ? 'Hide AI Financial Forecast' : 'Show AI Financial Forecast'}
+          </Button>
+        )}
 
         {/* AI Financial Forecast */}
         {showForecast && <FinancialForecast />}

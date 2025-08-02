@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { InternationalizationProvider } from './contexts/InternationalizationContext';
 import { CurrencyConversionProvider } from './contexts/CurrencyConversionContext';
+import { PersonalizationProvider } from './contexts/PersonalizationContext';
 import { FinanceProvider, useFinance } from './contexts/FinanceContext';
 import { BottomNavigation } from './components/layout/BottomNavigation';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
@@ -74,6 +75,10 @@ const AppContent: React.FC = () => {
       console.log("Onboarding completed with data:", onboardingData);
       setIsInitialLoad(true); // Set loading state while processing
       
+      // Process and store personalization data
+      const personalizedSettings = processOnboardingForPersonalization(onboardingData);
+      localStorage.setItem(`finspire_personalization_${user?.id}`, JSON.stringify(personalizedSettings));
+      
       // Create initial balance transaction if provided
       if (onboardingData.initialBalance && onboardingData.initialBalance > 0) {
         await addTransaction({
@@ -85,8 +90,37 @@ const AppContent: React.FC = () => {
         });
       }
       
-      // Create initial income transaction if provided
-      if (onboardingData.monthlyIncome) {
+      // Create income transactions based on income sources
+      if (onboardingData.incomeSources && onboardingData.incomeSources.length > 0) {
+        for (const source of onboardingData.incomeSources) {
+          if (source.amount > 0) {
+            await addTransaction({
+              type: 'income',
+              amount: source.amount,
+              category: source.type.charAt(0).toUpperCase() + source.type.slice(1),
+              description: source.description || `${source.type} income (initial setup)`,
+              date: new Date(),
+            });
+            
+            // Create recurring transaction for regular income
+            if (source.frequency !== 'irregular') {
+              await addRecurringTransaction({
+                type: 'income',
+                amount: source.amount,
+                category: source.type.charAt(0).toUpperCase() + source.type.slice(1),
+                description: source.description || `${source.type} income`,
+                frequency: source.frequency === 'weekly' ? 'weekly' : 
+                          source.frequency === 'yearly' ? 'yearly' : 'monthly',
+                startDate: new Date(),
+                nextOccurrenceDate: new Date(new Date().setMonth(new Date().getMonth() + 1)),
+                isActive: true,
+                currentOccurrences: 0,
+              });
+            }
+          }
+        }
+      } else if (onboardingData.monthlyIncome) {
+        // Fallback to old method
         await addTransaction({
           type: 'income',
           amount: onboardingData.monthlyIncome,
@@ -110,8 +144,8 @@ const AppContent: React.FC = () => {
       }
 
       // Create goals based on selected primary goals
-      if (onboardingData.primaryGoals && onboardingData.primaryGoals.length > 0) {
-        const goalPromises = onboardingData.primaryGoals.map(async (goalType: string) => {
+      if (onboardingData.primaryFocus && onboardingData.primaryFocus.length > 0) {
+        const goalPromises = onboardingData.primaryFocus.map(async (goalType: string) => {
           const goalData = getGoalData(goalType, onboardingData);
           if (goalData) {
             await addGoal(goalData);
@@ -133,20 +167,31 @@ const AppContent: React.FC = () => {
       }
 
       // Create initial budgets based on income
-      if (onboardingData.monthlyIncome) {
+      const monthlyIncome = onboardingData.totalMonthlyIncome || onboardingData.monthlyIncome;
+      if (monthlyIncome) {
         const budgetCategories = [
           { category: 'Food', percentage: 0.15 },
           { category: 'Transportation', percentage: 0.15 },
           { category: 'Entertainment', percentage: 0.10 },
           { category: 'Shopping', percentage: 0.10 },
         ];
+        
+        // Adjust budget categories based on user type
+        if (onboardingData.userTypes?.includes('student')) {
+          budgetCategories.push({ category: 'Education', percentage: 0.20 });
+        }
+        
+        if (onboardingData.userTypes?.includes('business_owner')) {
+          budgetCategories.push({ category: 'Business', percentage: 0.25 });
+        }
 
         const budgetPromises = budgetCategories.map(async ({ category, percentage }) => {
           await addBudget({
             category,
-            amount: onboardingData.monthlyIncome! * percentage,
+            amount: monthlyIncome * percentage,
             spent: 0,
-            period: onboardingData.budgetPeriod || 'monthly',
+            period: onboardingData.budgetPeriod || 
+                   (onboardingData.userTypes?.includes('student') ? 'weekly' : 'monthly'),
           });
         });
         await Promise.all(budgetPromises);
@@ -157,7 +202,66 @@ const AppContent: React.FC = () => {
     } finally {
       setIsInitialLoad(false);
       completeOnboarding(); // Complete onboarding regardless of success or failure
+  // Process onboarding data for personalization
+  const processOnboardingForPersonalization = (data: any) => {
+    const personalization = {
+      dashboardLayout: ['overview', 'recent_transactions', 'quick_actions'],
+      priorityFeatures: [] as string[],
+      hiddenFeatures: [] as string[],
+      budgetingFrequency: 'monthly' as 'weekly' | 'monthly' | 'yearly',
+      alertSettings: {
+        budgetAlerts: true,
+        goalReminders: true,
+        billReminders: true,
+        weeklyReports: false,
+      },
+      assistantPersonality: 'balanced' as 'conservative' | 'balanced' | 'aggressive',
+      userTypes: data.userTypes || [],
+      primaryFocus: data.primaryFocus || [],
+      incomeStability: data.incomeStability || 'stable',
+      experienceLevel: data.experience || 'intermediate',
+    };
+
+    // Process user types for dashboard layout
+    if (data.userTypes?.includes('student')) {
+      personalization.dashboardLayout.unshift('budgeting', 'savings_goals');
+      personalization.budgetingFrequency = 'weekly';
+      personalization.assistantPersonality = 'conservative';
     }
+    
+    if (data.userTypes?.includes('freelancer')) {
+      personalization.dashboardLayout.unshift('income_tracking', 'cash_flow');
+      personalization.alertSettings.irregularIncomeWarning = true;
+    }
+    
+    if (data.userTypes?.includes('business_owner')) {
+      personalization.dashboardLayout.unshift('business_tracking', 'investment_planning');
+      personalization.assistantPersonality = 'aggressive';
+    }
+    }
+    // Process primary focus for priority features
+    if (data.primaryFocus?.includes('save_more')) {
+      personalization.priorityFeatures.push('savings_dashboard', 'goal_tracking');
+    }
+    
+    if (data.primaryFocus?.includes('pay_off_debt')) {
+      personalization.priorityFeatures.push('debt_strategies', 'emi_tracking');
+    }
+    
+    if (data.primaryFocus?.includes('invest_better')) {
+      personalization.priorityFeatures.push('investment_tracking', 'portfolio_analysis');
+    }
+  };
+    // Hide features based on financial activities
+    if (!data.hasInvestments) {
+      personalization.hiddenFeatures.push('investment_tracking', 'portfolio_analysis');
+    }
+    
+    if (!data.hasDebts) {
+      personalization.hiddenFeatures.push('debt_tracking', 'emi_reminders');
+    }
+
+    return personalization;
   };
 
   const getGoalData = (goalType: string, data: any) => {
@@ -176,7 +280,7 @@ const AppContent: React.FC = () => {
       emergency: {
         title: 'Emergency Fund',
         description: 'Build a financial safety net for unexpected expenses',
-        targetAmount: data.monthlyIncome ? data.monthlyIncome * 6 : 10000,
+        targetAmount: (data.totalMonthlyIncome || data.monthlyIncome) ? (data.totalMonthlyIncome || data.monthlyIncome) * 6 : 10000,
         category: 'Emergency',
       },
       house: {
@@ -218,7 +322,7 @@ const AppContent: React.FC = () => {
       retirement: {
         title: 'Retirement Savings',
         description: 'Secure your financial future',
-        targetAmount: data.monthlyIncome ? data.monthlyIncome * 120 : 100000,
+        targetAmount: (data.totalMonthlyIncome || data.monthlyIncome) ? (data.totalMonthlyIncome || data.monthlyIncome) * 120 : 100000,
         category: 'Investment',
       },
     };
@@ -298,9 +402,11 @@ const App: React.FC = () => {
           <AuthProvider>
             <InternationalizationProvider>
               <CurrencyConversionProvider>
-                <FinanceProvider>
-                  <AppContent />
-                </FinanceProvider>
+                <PersonalizationProvider>
+                  <FinanceProvider>
+                    <AppContent />
+                  </FinanceProvider>
+                </PersonalizationProvider>
               </CurrencyConversionProvider>
             </InternationalizationProvider>
           </AuthProvider>
