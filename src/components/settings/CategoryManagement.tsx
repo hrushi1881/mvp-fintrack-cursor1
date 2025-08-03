@@ -6,7 +6,6 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { useFinance } from '../../contexts/FinanceContext';
 import { UserCategory } from '../../types';
-export default CategoryManagement;
 
 interface CategoryFormData {
   name: string;
@@ -408,3 +407,7 @@ export const CategoryManagement: React.FC = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+export default CategoryManagement;
