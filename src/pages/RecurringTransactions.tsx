@@ -56,14 +56,15 @@ export const RecurringTransactions: React.FC = () => {
   const handleToggleActive = (id: string, isActive: boolean) => {
     try {
       console.log('🔄 Toggling recurring transaction active state:', id, !isActive);
-      await updateRecurringTransaction(id, { isActive: !isActive });
-      console.log('✅ Toggle completed successfully');
- const toggleRecurringTransaction = async (id: number, isActive: boolean) => {
-  try {     
-      // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
-      
-    { catch (error) 
+      updateRecurringTransaction(id, { isActive: !isActive }).then(() => {
+        console.log('✅ Toggle completed successfully');
+        // Invalidate related queries
+        queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
+      }).catch((error) => {
+        console.error('Error toggling recurring transaction:', error);
+        // Error is already handled in FinanceContext with toast
+      });
+    } catch (error) {
       console.error('Error toggling recurring transaction:', error);
       // Error is already handled in FinanceContext with toast
     }

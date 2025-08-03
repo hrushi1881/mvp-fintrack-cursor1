@@ -49,45 +49,29 @@ export const CategoryManagement: React.FC = () => {
   ];
 
  const handleAddCategory = async (data: CategoryFormData) => {
-  try {
-    setError(null);
-    await addUserCategory(data);
-    setShowAddForm(false);
-    reset();
-    queryClient.invalidateQueries({ queryKey: ['user-categories'] });
-  } catch (error: any) {
-    setError(error.message || 'Failed to add category');
-  }
-
-
-try {
-  setError(null);
-  await addUserCategory(data);
-  setShowAddForm(false);
-  reset();
-
-  // Invalidate related queries
-  queryClient.invalidateQueries({ queryKey: ['user-categories'] });
-} catch (error: any) {
-  setError(error.message || 'Failed to add category');
-}
-
-
+    try {
+      setError(null);
+      await addUserCategory(data);
+      setShowAddForm(false);
+      reset();
+      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
+    } catch (error: any) {
+      setError(error.message || 'Failed to add category');
+    }
+  };
 
   const handleUpdateCategory = async (data: CategoryFormData) => {
     if (!editingCategoryId) return;
     
     try {
-  setError(null);
-  await addUserCategory(data);
-  setShowAddForm(false);
-  reset();
-
-  // Invalidate related queries
-  queryClient.invalidateQueries({ queryKey: ['user-categories'] }); // ✅ Ends with semicolon
+      setError(null);
+      await updateUserCategory(editingCategoryId, data);
+      setEditingCategoryId(null);
+      reset();
+      queryClient.invalidateQueries({ queryKey: ['user-categories'] });
     } catch (error: any) {
-  setError(error.message || 'Failed to add category');
-}
+      setError(error.message || 'Failed to update category');
+    }
   };
   
 
