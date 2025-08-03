@@ -407,7 +407,3 @@ export const CategoryManagement: React.FC = () => {
         </div>
       </div>
     </div>
-  );
-};
-
-export default CategoryManagement;

@@ -779,7 +779,6 @@ export const TransactionHistory: React.FC = () => {
             </div>
           )}
         )}
-      </div>
 
       {/* Edit Transaction Modal */}
       <Modal
