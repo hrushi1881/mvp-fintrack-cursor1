@@ -5,13 +5,25 @@ import type { Database } from '../types/supabase';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Production-safe environment variable validation
+// Strict production environment variable validation
 if (!supabaseUrl) {
-  throw new Error('VITE_SUPABASE_URL is required. Please check your environment configuration.');
+  throw new Error('VITE_SUPABASE_URL environment variable is required. Please check your .env file.');
 }
 
 if (!supabaseAnonKey) {
-  throw new Error('VITE_SUPABASE_ANON_KEY is required. Please check your environment configuration.');
+  throw new Error('VITE_SUPABASE_ANON_KEY environment variable is required. Please check your .env file.');
+}
+
+// Validate URL format
+try {
+  new URL(supabaseUrl);
+} catch {
+  throw new Error('VITE_SUPABASE_URL must be a valid URL.');
+}
+
+// Validate key format (basic check)
+if (supabaseAnonKey.length < 100) {
+  throw new Error('VITE_SUPABASE_ANON_KEY appears to be invalid (too short).');
 }
 
 console.log('Initializing Supabase client with URL:', supabaseUrl);

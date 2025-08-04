@@ -45,8 +45,12 @@ export const BudgetForm: React.FC<BudgetFormProps> = ({ initialData, onSubmit, o
 
   const selectedPeriod = watch('period');
   
-  // Get expense categories
-  const expenseCategories = userCategories.filter(c => c.type === 'expense');
+  // Get expense categories (with fallback to default categories)
+  const defaultExpenseCategories = ['Food', 'Transportation', 'Entertainment', 'Shopping', 'Bills', 'Healthcare', 'Other'];
+  const userExpenseCategories = userCategories.filter(c => c.type === 'expense');
+  const expenseCategories = userExpenseCategories.length > 0 
+    ? userExpenseCategories.map(c => c.name)
+    : defaultExpenseCategories;
 
   const handleFormSubmit = async (data: BudgetFormData) => {
     try {

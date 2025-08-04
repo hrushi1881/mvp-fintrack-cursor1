@@ -47,8 +47,16 @@ export const AddTransaction: React.FC = () => {
   const amount = watch('amount');
   const category = watch('category');
   
-  // Get categories based on type
-  const availableCategories = userCategories.filter(c => c.type === type);
+  // Get categories based on type (with fallback to default categories)
+  const defaultCategories = {
+    income: ['Salary', 'Freelance', 'Investment', 'Business', 'Other'],
+    expense: ['Food', 'Transportation', 'Entertainment', 'Shopping', 'Bills', 'Healthcare', 'Other']
+  };
+  
+  const userCategoriesForType = userCategories.filter(c => c.type === type);
+  const availableCategories = userCategoriesForType.length > 0 
+    ? userCategoriesForType.map(c => ({ id: c.id, name: c.name }))
+    : defaultCategories[type].map(name => ({ id: name, name }));
 
   // Set default category when type changes
   React.useEffect(() => {

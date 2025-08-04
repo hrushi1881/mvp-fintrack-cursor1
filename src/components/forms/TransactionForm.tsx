@@ -55,8 +55,16 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   const category = watch('category');
   const description = watch('description');
   
-  // Get available categories based on type
-  const availableCategories = userCategories.filter(c => c.type === type);
+  // Get available categories based on type (with fallback to default categories)
+  const defaultCategories = {
+    income: ['Salary', 'Freelance', 'Investment', 'Business', 'Other'],
+    expense: ['Food', 'Transportation', 'Entertainment', 'Shopping', 'Bills', 'Healthcare', 'Other']
+  };
+  
+  const userCategoriesForType = userCategories.filter(c => c.type === type);
+  const availableCategories = userCategoriesForType.length > 0 
+    ? userCategoriesForType.map(c => ({ id: c.id, name: c.name, icon: c.icon, color: c.color }))
+    : defaultCategories[type].map(name => ({ id: name, name, icon: null, color: null }));
 
   // Set default category when type changes
   useEffect(() => {
