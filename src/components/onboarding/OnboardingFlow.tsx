@@ -143,17 +143,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   const completeOnboarding = async () => {
     console.log('🔄 Completing onboarding with data:', onboardingData);
     
-    // Add biometric setting for mobile devices
-    if (isNative) {
-      onboardingData.biometricEnabled = true;
-    }
-    
     // Process and analyze onboarding data for personalization
     const personalizedData = processOnboardingData(onboardingData);
     console.log('🔄 Processed personalization data:', personalizedData);
     
     onComplete(onboardingData);
-    navigate('/');
   };
 
   // Intelligent onboarding data processing

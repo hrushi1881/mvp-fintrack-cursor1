@@ -13,6 +13,7 @@ import { CollapsibleHeader } from '../components/layout/CollapsibleHeader';
 import { LiveExchangeRateWidget } from '../components/common/LiveExchangeRateWidget';
 import { NotificationsPanel } from '../components/common/NotificationsPanel';
 import { ProfileMenu } from '../components/common/ProfileMenu';
+import { MultipleIncomeManager } from '../components/dashboard/MultipleIncomeManager';
 import { useFinance } from '../contexts/FinanceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { usePersonalization } from '../contexts/PersonalizationContext';
@@ -22,7 +23,7 @@ import { FinancialForecast } from '../components/dashboard/FinancialForecast';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, startOnboarding } = useAuth();
+  const { user } = useAuth();
   const { settings, getDashboardComponents, shouldShowTutorial } = usePersonalization();
   const { stats, transactions, addGoal, addLiability, addTransaction, addRecurringTransaction, loading, getMonthlyTrends } = useFinance();
   const { formatCurrency } = useInternationalization();
@@ -34,7 +35,6 @@ export const Dashboard: React.FC = () => {
   const [searchResults, setSearchResults] = useState(transactions);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showOnboardingPrompt, setShowOnboardingPrompt] = useState(false);
   const [showForecast, setShowForecast] = useState(false);
 
   const handleAddGoal = async (goal: any) => {
@@ -71,11 +71,6 @@ export const Dashboard: React.FC = () => {
     } catch (error) {
       console.error('Error adding recurring transaction:', error);
     }
-  };
-
-  const handleStartOnboarding = () => {
-    startOnboarding();
-    navigate('/onboarding');
   };
 
   const netWorth = stats.totalIncome - stats.totalExpenses - stats.totalLiabilities;
@@ -177,39 +172,6 @@ export const Dashboard: React.FC = () => {
             onResults={setSearchResults}
             placeholder="Search transactions, goals, or categories..."
           />
-        )}
-
-        {/* Onboarding Prompt */}
-        {showOnboardingPrompt && (
-          <div className="bg-gradient-to-r from-primary-600/80 to-primary-800/80 backdrop-blur-md rounded-2xl p-4 sm:p-6 border border-primary-500/20 mb-4">
-            <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-primary-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                <RefreshCw size={24} className="text-primary-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-white mb-2">Restart Onboarding?</h3>
-                <p className="text-primary-100 text-sm mb-4">
-                  You can go through the onboarding process again to update your financial profile and preferences.
-                </p>
-                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
-                  <Button
-                    onClick={handleStartOnboarding}
-                    className="bg-white text-primary-600 py-2 px-4 rounded-lg font-medium hover:bg-primary-50 transition-colors text-sm flex items-center justify-center"
-                  >
-                    <RefreshCw size={16} className="mr-2" />
-                    Start Onboarding
-                  </Button>
-                  <Button
-                    onClick={() => setShowOnboardingPrompt(false)}
-                    variant="outline"
-                    className="border border-white/30 text-white py-2 px-4 rounded-lg font-medium hover:bg-white/10 transition-colors text-sm flex items-center justify-center"
-                  >
-                    Maybe Later
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
         )}
 
         {/* Welcome Message for New Users */}
@@ -331,6 +293,9 @@ export const Dashboard: React.FC = () => {
 
         {/* AI Financial Forecast */}
         {showForecast && <FinancialForecast />}
+
+        {/* Multiple Income Sources */}
+        <MultipleIncomeManager />
 
         {/* Quick Stats Cards */}
         <div className="space-y-3 sm:space-y-4">

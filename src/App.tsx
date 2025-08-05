@@ -30,7 +30,7 @@ import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 
 const AppContent: React.FC = () => {
-  const { user, loading, needsOnboarding, completeOnboarding } = useAuth();
+  const { user, loading } = useAuth();
   const { addTransaction, addGoal, addBudget, addRecurringTransaction } = useFinance();
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const isNative = Capacitor.isNativePlatform();
@@ -70,7 +70,23 @@ const AppContent: React.FC = () => {
     return <Auth />;
   }
 
-  const handleOnboardingComplete = async (onboardingData: any) => {
+  // Always show onboarding for logged-in users
+  return (
+    <div className="relative">
+      <Silk 
+        speed={3}
+        scale={2}
+        color="#0f172a"
+        noiseIntensity={0.8}
+        rotation={0.1}
+      />
+      <div className="relative z-10">
+        <OnboardingFlow onComplete={handleOnboardingComplete} />
+      </div>
+    </div>
+  );
+
+  function handleOnboardingComplete(onboardingData: any) {
     try {
       console.log("Onboarding completed with data:", onboardingData);
       setIsInitialLoad(true); // Set loading state while processing
@@ -201,7 +217,11 @@ const AppContent: React.FC = () => {
       console.error('Error completing onboarding:', error);
     } finally {
       setIsInitialLoad(false);
-      completeOnboarding(); // Complete onboarding regardless of success or failure
+      // Navigate to dashboard after onboarding
+      window.location.href = '/';
+    }
+  }
+
   // Process onboarding data for personalization
   const processOnboardingForPersonalization = (data: any) => {
     const personalization = {
@@ -336,62 +356,6 @@ const AppContent: React.FC = () => {
       targetDate: baseTargetDate,
     };
   };
-
-  if (needsOnboarding) {
-    return (
-      <div className="relative">
-        <Silk 
-          speed={3}
-          scale={2}
-          color="#0f172a"
-          noiseIntensity={0.8}
-          rotation={0.1}
-        />
-        <div className="relative z-10">
-          <OnboardingFlow onComplete={handleOnboardingComplete} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative min-h-screen">
-      {/* Animated Silk Background */}
-      <Silk 
-        speed={3}
-        scale={2}
-        color="#0f172a"
-        noiseIntensity={0.8}
-        rotation={0.1}
-      />
-      
-      {/* App Content */}
-      <div className="relative z-10">
-        <ErrorBoundary>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/calendar" element={<Calendar />} />
-            <Route path="/add-transaction" element={<AddTransaction />} />
-            <Route path="/transaction-history" element={<TransactionHistory />} />
-            <Route path="/goals" element={<Goals />} />
-            <Route path="/liabilities" element={<Liabilities />} />
-            <Route path="/budgets" element={<Budgets />} />
-            <Route path="/recurring-transactions" element={<RecurringTransactions />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/privacy" element={<Privacy />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/onboarding" element={<OnboardingFlow onComplete={handleOnboardingComplete} />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-          <BottomNavigation />
-          <AiFinancialAssistant />
-        </ErrorBoundary>
-      </div>
-    </div>
-  );
 };
 
 const App: React.FC = () => {

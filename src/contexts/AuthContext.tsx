@@ -7,17 +7,12 @@ import { Preferences } from '@capacitor/preferences';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  needsOnboarding: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
-  completeOnboarding: () => void;
-  startOnboarding: () => void;
   authError: string | null;
   clearAuthError: () => void;
   authStatus: 'idle' | 'loading' | 'success' | 'error';
-  biometricEnabled: boolean;
-  toggleBiometric: (enabled: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -65,22 +60,10 @@ const removeData = async (key: string) => {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
 
   const clearAuthError = () => setAuthError(null);
-
-  // Check for biometric setting on startup
-  useEffect(() => {
-    const checkBiometricSetting = async () => {
-      const biometricSetting = await getData('biometric_enabled');
-      setBiometricEnabled(biometricSetting === 'true');
-    };
-    
-    checkBiometricSetting();
-  }, []);
 
   useEffect(() => {
     // Check for existing session
@@ -122,39 +105,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               createdAt: new Date(profile.created_at),
             });
             
-            // For existing users (returning users), check if they have any financial data
-            // If they have data, skip onboarding; if not, they may need onboarding
-            try {
-              const { data: transactions } = await supabase
-                .from('transactions')
-                .select('id')
-                .eq('user_id', session.user.id)
-                .limit(1);
-              
-              const { data: goals } = await supabase
-                .from('goals')
-                .select('id')
-                .eq('user_id', session.user.id)
-                .limit(1);
-              
-              // If user has any transactions or goals, they've used the app before
-              const hasFinancialData = (transactions && transactions.length > 0) || (goals && goals.length > 0);
-              
-              if (hasFinancialData) {
-                // Existing user with data - skip onboarding
-                setNeedsOnboarding(false);
-                await storeData('onboarding_completed', 'true');
-              } else {
-                // Check if they explicitly completed onboarding before
-                const hasCompletedOnboarding = await getData('onboarding_completed');
-                setNeedsOnboarding(hasCompletedOnboarding !== 'true');
-              }
-            } catch (dataCheckError) {
-              console.error('Error checking user data:', dataCheckError);
-              // Fallback to checking onboarding completion flag
-              const hasCompletedOnboarding = await getData('onboarding_completed');
-              setNeedsOnboarding(hasCompletedOnboarding !== 'true');
-            }
+            // All users go through onboarding on every login
           } else {
             // If profile doesn't exist but user is authenticated, create profile
             try {
@@ -187,8 +138,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   createdAt: new Date(newProfile.created_at),
                 });
                 
-                // New users always need onboarding
-                setNeedsOnboarding(true);
               }
             } catch (insertError) {
               console.error('Error creating profile:', insertError);
@@ -233,9 +182,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               createdAt: new Date(profile.created_at),
             });
             
-            // Check if user has completed onboarding
-            const hasCompletedOnboarding = await getData('onboarding_completed');
-            setNeedsOnboarding(hasCompletedOnboarding !== 'true');
           } else {
             // If profile doesn't exist, create it
             try {
@@ -267,9 +213,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   createdAt: new Date(newProfile.created_at),
                 });
                 
-                // New users always need onboarding
-                setNeedsOnboarding(true);
-                await removeData('onboarding_completed');
               }
             } catch (insertError) {
               console.error('Error creating profile on sign in:', insertError);
@@ -277,8 +220,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
-          setNeedsOnboarding(true);
-          await removeData('onboarding_completed');
         }
       }
     );
@@ -349,7 +290,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 
                 // Check onboarding status
                 const hasCompletedOnboarding = await getData('onboarding_completed');
-                setNeedsOnboarding(hasCompletedOnboarding !== 'true');
                 return;
               }
             } catch (insertError) {
@@ -372,7 +312,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           
           // Check onboarding status
           const hasCompletedOnboarding = await getData('onboarding_completed');
-          setNeedsOnboarding(hasCompletedOnboarding !== 'true');
         }
       }
     } catch (error: any) {
@@ -457,8 +396,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setAuthStatus('error');
       }
       
-      // Always set needsOnboarding to true for new users
-      setNeedsOnboarding(true);
     } catch (error: any) {
       console.error('Registration error:', error);
       setAuthError(error.message || 'Registration failed. Please try again.');
@@ -476,8 +413,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (error) throw error;
       
       setUser(null);
-      setNeedsOnboarding(true);
-      await removeData('onboarding_completed');
     } catch (error: any) {
       console.error('Logout error:', error);
       setAuthError(error.message || 'Failed to logout');
@@ -487,35 +422,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const completeOnboarding = async () => {
-    setNeedsOnboarding(false);
-    await storeData('onboarding_completed', 'true');
-  };
-
-  const startOnboarding = async () => {
-    setNeedsOnboarding(true);
-    await removeData('onboarding_completed');
-  };
-
-  const toggleBiometric = async (enabled: boolean) => {
-    setBiometricEnabled(enabled);
-    await storeData('biometric_enabled', enabled ? 'true' : 'false');
-  };
-
   const value = {
     user,
     loading,
-    needsOnboarding,
     login,
     register,
     logout,
-    completeOnboarding,
-    startOnboarding,
     authError,
     clearAuthError,
     authStatus,
-    biometricEnabled,
-    toggleBiometric,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

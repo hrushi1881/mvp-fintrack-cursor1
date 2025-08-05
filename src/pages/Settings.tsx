@@ -7,7 +7,6 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { useInternationalization } from '../contexts/InternationalizationContext';
-import { BiometricSettings } from '../components/settings/BiometricSettings';
 import { Capacitor } from '@capacitor/core';
 
 export const Settings: React.FC = () => {
@@ -233,9 +232,6 @@ export const Settings: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* Biometric Authentication Settings */}
-        <BiometricSettings />
 
         {/* Mobile App Settings */}
         <div className="bg-black/20 backdrop-blur-md rounded-2xl p-6 border border-white/10">

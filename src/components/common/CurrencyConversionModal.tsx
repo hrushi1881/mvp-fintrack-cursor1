@@ -16,7 +16,7 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
   onClose,
   targetCurrency
 }) => {
-  const { currency, formatCurrency } = useInternationalization();
+  const { currency, formatCurrency, setCurrency } = useInternationalization();
   const { 
     convertAllUserData, 
     getConversionRate, 
@@ -53,6 +53,11 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
     } finally {
       setIsConverting(false);
     }
+  };
+
+  const handleDirectCurrencyChange = (selectedCurrency: any) => {
+    setCurrency(selectedCurrency);
+    onClose();
   };
 
   const handleRefreshRates = async () => {
@@ -93,6 +98,38 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Convert Currency">
       <div className="space-y-6">
+        {/* Conversion Type Selection */}
+        <div className="bg-blue-500/20 rounded-lg p-4 border border-blue-500/30">
+          <h4 className="font-medium text-blue-400 mb-2">Conversion Options</h4>
+          <div className="space-y-3">
+            <label className="cursor-pointer">
+              <input
+                type="radio"
+                name="conversionType"
+                value="display"
+                className="sr-only"
+              />
+              <div className="p-3 rounded-lg border-2 border-primary-500 bg-primary-500/20 text-primary-400">
+                <p className="font-medium">Display Currency Only</p>
+                <p className="text-sm opacity-80">Change how amounts are displayed without converting existing data</p>
+              </div>
+            </label>
+            
+            <label className="cursor-pointer">
+              <input
+                type="radio"
+                name="conversionType"
+                value="data"
+                className="sr-only"
+              />
+              <div className="p-3 rounded-lg border-2 border-white/20 hover:border-white/30 text-gray-300">
+                <p className="font-medium">Convert All Data</p>
+                <p className="text-sm opacity-80">Convert all existing financial data to the new currency</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {/* Connection Status */}
         <div className={`flex items-center space-x-2 p-3 rounded-lg ${
           isOnline ? 'bg-success-500/20 border border-success-500/30' : 'bg-warning-500/20 border border-warning-500/30'
@@ -239,12 +276,19 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
             Cancel
           </Button>
           <Button
+            onClick={() => handleDirectCurrencyChange(targetCurrency)}
+            className="flex-1 bg-primary-500 hover:bg-primary-600"
+            disabled={isConverting}
+          >
+            Display Only
+          </Button>
+          <Button
             onClick={handleConversion}
-            className="flex-1"
+            className="flex-1 bg-warning-500 hover:bg-warning-600"
             loading={isConverting}
             disabled={isConverting || currency.code === targetCurrency.code}
           >
-            {isConverting ? 'Converting...' : `Convert to ${targetCurrency.code}`}
+            Convert Data
           </Button>
         </div>
       </div>

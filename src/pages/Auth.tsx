@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
-  const { user, authStatus, needsOnboarding } = useAuth();
+  const { user, authStatus } = useAuth();
   const navigate = useNavigate();
 
   // Redirect if user is already logged in
@@ -16,16 +16,13 @@ export const Auth: React.FC = () => {
     if (user) {
       // Add a small delay to ensure complete authentication
       const redirectTimer = setTimeout(() => {
-      if (needsOnboarding) {
+        // Always redirect to onboarding for returning users
         navigate('/onboarding');
-      } else {
-        navigate('/');
-      }
       }, 1000);
       
       return () => clearTimeout(redirectTimer);
     }
-  }, [user, needsOnboarding, navigate]);
+  }, [user, navigate]);
 
   // Redirect to onboarding after successful registration
   useEffect(() => {

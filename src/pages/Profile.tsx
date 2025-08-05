@@ -15,7 +15,7 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 
 export const Profile: React.FC = () => {
-  const { user, logout, startOnboarding } = useAuth();
+  const { user, logout } = useAuth();
   const { t } = useTranslation();
   const { detectUserLocation } = useInternationalization();
   const navigate = useNavigate();
@@ -37,7 +37,6 @@ export const Profile: React.FC = () => {
   };
 
   const handleRestartOnboarding = () => {
-    startOnboarding();
     navigate('/onboarding');
   };
 
@@ -122,7 +121,7 @@ export const Profile: React.FC = () => {
             className="mt-4 border-primary-500/30 text-primary-400 hover:bg-primary-500/10"
           >
             <RefreshCw size={14} className="mr-2" />
-            Restart Onboarding
+            Go to Onboarding
           </Button>
         </div>
 
