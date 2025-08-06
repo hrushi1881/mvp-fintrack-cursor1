@@ -418,6 +418,15 @@ export const Goals: React.FC = () => {
                   {/* Action Buttons - Only show if not completed */}
                   {!isCompleted && (
                     <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mt-3">
+                      {/* Priority Badge */}
+                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        goal.priority === 'high' ? 'bg-error-500/20 text-error-400' :
+                        goal.priority === 'medium' ? 'bg-warning-500/20 text-warning-400' :
+                        'bg-success-500/20 text-success-400'
+                      }`}>
+                        {goal.priority || 'medium'} priority
+                      </div>
+                      
                       <Button
                         size="sm"
                         variant="outline"

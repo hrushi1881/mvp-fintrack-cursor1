@@ -30,6 +30,7 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
   const [isConverting, setIsConverting] = useState(false);
   const [conversionComplete, setConversionComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversionType, setConversionType] = useState<'display' | 'data'>('display');
 
   const conversionRate = getConversionRate(currency.code, targetCurrency.code);
   const sampleAmounts = [100, 1000, 10000];
@@ -39,7 +40,13 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
       setIsConverting(true);
       setError(null);
       
-      await convertAllUserData(targetCurrency.code);
+      if (conversionType === 'data') {
+        await convertAllUserData(targetCurrency.code);
+      } else {
+        // Display only - just change the currency setting
+        setCurrency(targetCurrency);
+      }
+      
       setConversionComplete(true);
       
       // Auto-close after success
@@ -55,10 +62,6 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
     }
   };
 
-  const handleDirectCurrencyChange = (selectedCurrency: any) => {
-    setCurrency(selectedCurrency);
-    onClose();
-  };
 
   const handleRefreshRates = async () => {
     try {
@@ -107,9 +110,15 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
                 type="radio"
                 name="conversionType"
                 value="display"
+                checked={conversionType === 'display'}
+                onChange={() => setConversionType('display')}
                 className="sr-only"
               />
-              <div className="p-3 rounded-lg border-2 border-primary-500 bg-primary-500/20 text-primary-400">
+              <div className={`p-3 rounded-lg border-2 transition-colors ${
+                conversionType === 'display' 
+                  ? 'border-primary-500 bg-primary-500/20 text-primary-400' 
+                  : 'border-white/20 hover:border-white/30 text-gray-300'
+              }`}>
                 <p className="font-medium">Display Currency Only</p>
                 <p className="text-sm opacity-80">Change how amounts are displayed without converting existing data</p>
               </div>
@@ -120,9 +129,15 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
                 type="radio"
                 name="conversionType"
                 value="data"
+                checked={conversionType === 'data'}
+                onChange={() => setConversionType('data')}
                 className="sr-only"
               />
-              <div className="p-3 rounded-lg border-2 border-white/20 hover:border-white/30 text-gray-300">
+              <div className={`p-3 rounded-lg border-2 transition-colors ${
+                conversionType === 'data' 
+                  ? 'border-warning-500 bg-warning-500/20 text-warning-400' 
+                  : 'border-white/20 hover:border-white/30 text-gray-300'
+              }`}>
                 <p className="font-medium">Convert All Data</p>
                 <p className="text-sm opacity-80">Convert all existing financial data to the new currency</p>
               </div>
@@ -240,17 +255,36 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
         )}
 
         {/* Warning */}
-        <div className="bg-warning-500/20 border border-warning-500/30 rounded-lg p-4">
+        <div className={`rounded-lg p-4 border ${
+          conversionType === 'data' 
+            ? 'bg-warning-500/20 border-warning-500/30' 
+            : 'bg-blue-500/20 border-blue-500/30'
+        }`}>
           <div className="flex items-start space-x-3">
-            <AlertCircle size={16} className="text-warning-400 mt-0.5" />
+            <AlertCircle size={16} className={`mt-0.5 ${
+              conversionType === 'data' ? 'text-warning-400' : 'text-blue-400'
+            }`} />
             <div className="text-sm">
-              <p className="text-warning-400 font-medium mb-1">Important Notice</p>
-              <ul className="text-warning-300 space-y-1 text-xs">
-                <li>• All your financial data will be converted to {targetCurrency.name}</li>
-                <li>• This action cannot be undone automatically</li>
-                <li>• {isOnline ? 'Using live exchange rates' : 'Using cached exchange rates'}</li>
-                <li>• Original amounts are preserved for reference</li>
-              </ul>
+              <p className={`font-medium mb-1 ${
+                conversionType === 'data' ? 'text-warning-400' : 'text-blue-400'
+              }`}>
+                {conversionType === 'data' ? 'Data Conversion Notice' : 'Display Change Notice'}
+              </p>
+              {conversionType === 'data' ? (
+                <ul className="text-warning-300 space-y-1 text-xs">
+                  <li>• All your financial data will be converted to {targetCurrency.name}</li>
+                  <li>• This action cannot be undone automatically</li>
+                  <li>• {isOnline ? 'Using live exchange rates' : 'Using cached exchange rates'}</li>
+                  <li>• Original amounts are preserved for reference</li>
+                </ul>
+              ) : (
+                <ul className="text-blue-300 space-y-1 text-xs">
+                  <li>• Only the display currency will change to {targetCurrency.name}</li>
+                  <li>• Your existing data remains in the original currency</li>
+                  <li>• Amounts will be converted for display using live exchange rates</li>
+                  <li>• You can change this back anytime</li>
+                </ul>
+              )}
             </div>
           </div>
         </div>
@@ -276,19 +310,16 @@ export const CurrencyConversionModal: React.FC<CurrencyConversionModalProps> = (
             Cancel
           </Button>
           <Button
-            onClick={() => handleDirectCurrencyChange(targetCurrency)}
-            className="flex-1 bg-primary-500 hover:bg-primary-600"
-            disabled={isConverting}
-          >
-            Display Only
-          </Button>
-          <Button
             onClick={handleConversion}
-            className="flex-1 bg-warning-500 hover:bg-warning-600"
+            className={`flex-1 ${
+              conversionType === 'data' 
+                ? 'bg-warning-500 hover:bg-warning-600' 
+                : 'bg-primary-500 hover:bg-primary-600'
+            }`}
             loading={isConverting}
             disabled={isConverting || currency.code === targetCurrency.code}
           >
-            Convert Data
+            {conversionType === 'data' ? 'Convert All Data' : 'Change Display Only'}
           </Button>
         </div>
       </div>
