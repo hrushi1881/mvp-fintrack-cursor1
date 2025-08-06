@@ -134,7 +134,6 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([]);
   const [userCategories, setUserCategories] = useState<UserCategory[]>([]);
-  const [incomeSources, setIncomeSources] = useState<any[]>([]);
   const [insights, setInsights] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -169,23 +168,20 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
         liabilitiesResult,
         budgetsResult,
         recurringResult,
-        categoriesResult,
-        incomeSourcesResult
+        categoriesResult
       ] = await Promise.allSettled([
         loadTransactions(),
         loadGoals(),
         loadLiabilities(),
         loadBudgets(),
         loadRecurringTransactions(),
-        loadUserCategories(),
-        // Mock income sources for now - replace with actual table when implemented
-        Promise.resolve()
+        loadUserCategories()
       ]);
 
       // Log any failed operations
-      [transactionsResult, goalsResult, liabilitiesResult, budgetsResult, recurringResult, categoriesResult, incomeSourcesResult]
+      [transactionsResult, goalsResult, liabilitiesResult, budgetsResult, recurringResult, categoriesResult]
         .forEach((result, index) => {
-          const names = ['transactions', 'goals', 'liabilities', 'budgets', 'recurring', 'categories', 'incomeSources'];
+          const names = ['transactions', 'goals', 'liabilities', 'budgets', 'recurring', 'categories'];
           if (result.status === 'rejected') {
             console.error(`❌ Failed to load ${names[index]}:`, result.reason);
             showToast(`Failed to load ${names[index]}`, 'error');
@@ -1486,56 +1482,6 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     }
   };
 
-  // Income Sources Management
-  const addIncomeSource = async (sourceData: any) => {
-    try {
-      // For now, store in localStorage - replace with Supabase when table is ready
-      const newSource = {
-        id: Date.now().toString(),
-        ...sourceData,
-        userId: user?.id,
-        createdAt: new Date(),
-      };
-      
-      const updatedSources = [...incomeSources, newSource];
-      setIncomeSources(updatedSources);
-      localStorage.setItem(`finspire_income_sources_${user?.id}`, JSON.stringify(updatedSources));
-      
-      console.log('✅ Income source added successfully');
-    } catch (error: any) {
-      console.error('❌ Error adding income source:', error);
-      throw error;
-    }
-  };
-
-  const updateIncomeSource = async (sourceId: string, updates: any) => {
-    try {
-      const updatedSources = incomeSources.map(source =>
-        source.id === sourceId ? { ...source, ...updates, updatedAt: new Date() } : source
-      );
-      setIncomeSources(updatedSources);
-      localStorage.setItem(`finspire_income_sources_${user?.id}`, JSON.stringify(updatedSources));
-      
-      console.log('✅ Income source updated successfully');
-    } catch (error: any) {
-      console.error('❌ Error updating income source:', error);
-      throw error;
-    }
-  };
-
-  const deleteIncomeSource = async (sourceId: string) => {
-    try {
-      const updatedSources = incomeSources.filter(source => source.id !== sourceId);
-      setIncomeSources(updatedSources);
-      localStorage.setItem(`finspire_income_sources_${user?.id}`, JSON.stringify(updatedSources));
-      
-      console.log('✅ Income source deleted successfully');
-    } catch (error: any) {
-      console.error('❌ Error deleting income source:', error);
-      throw error;
-    }
-  };
-
   // Utility functions
   const searchTransactions = (query: string, filters?: any): Transaction[] => {
     if (!query && !filters) return transactions;
@@ -1937,20 +1883,6 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     }
   };
 
-  // Load income sources from localStorage on mount
-  useEffect(() => {
-    if (user) {
-      const savedSources = localStorage.getItem(`finspire_income_sources_${user.id}`);
-      if (savedSources) {
-        try {
-          setIncomeSources(JSON.parse(savedSources));
-        } catch (error) {
-          console.error('Error loading income sources:', error);
-        }
-      }
-    }
-  }, [user]);
-
   const value = {
     // Data
     transactions,
@@ -1959,10 +1891,6 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     budgets,
     recurringTransactions,
     userCategories,
-    incomeSources,
-    addIncomeSource,
-    updateIncomeSource,
-    deleteIncomeSource,
     stats,
     loading,
     insights,

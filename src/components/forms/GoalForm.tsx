@@ -16,11 +16,6 @@ interface GoalFormData {
   currentAmount: number;
   targetDate: string;
   category: string;
-  priority: 'high' | 'medium' | 'low';
-  notes?: string;
-  contributionFrequency: 'weekly' | 'monthly' | 'custom';
-  weeklyTarget?: number;
-  monthlyTarget?: number;
 }
 
 interface GoalFormProps {
@@ -30,11 +25,6 @@ interface GoalFormProps {
 }
 
 const goalCategories = ['Emergency', 'Travel', 'Education', 'Home', 'Investment', 'Other'];
-const priorityOptions = [
-  { value: 'high', label: 'High Priority', color: 'error', description: 'Urgent financial goal' },
-  { value: 'medium', label: 'Medium Priority', color: 'warning', description: 'Important but flexible' },
-  { value: 'low', label: 'Low Priority', color: 'success', description: 'Nice to have goal' }
-];
 
 export const GoalForm: React.FC<GoalFormProps> = ({
   onSubmit,
@@ -52,10 +42,7 @@ export const GoalForm: React.FC<GoalFormProps> = ({
       description: initialData?.description || '',
       targetAmount: initialData?.targetAmount || undefined,
       targetDate: initialData?.targetDate || '',
-      category: initialData?.category || '',
-      priority: initialData?.priority || 'medium',
-      contributionFrequency: initialData?.contributionFrequency || 'monthly',
-      notes: initialData?.notes || ''
+      category: initialData?.category || ''
     },
   });
 
@@ -199,48 +186,6 @@ export const GoalForm: React.FC<GoalFormProps> = ({
         />
       </div>
 
-      {/* Priority Level */}
-      <div className="bg-black/30 backdrop-blur-md rounded-xl p-4 border border-white/20">
-        <label className="block text-sm font-medium text-gray-300 mb-3">
-          Priority Level
-        </label>
-        <div className="space-y-2">
-          {priorityOptions.map((option) => (
-            <label key={option.value} className="cursor-pointer">
-              <input
-                type="radio"
-                value={option.value}
-                {...register('priority', { required: 'Priority is required' })}
-                className="sr-only"
-              />
-              <div className={`p-3 rounded-lg border-2 transition-colors ${
-                watch('priority') === option.value 
-                  ? `border-${option.color}-500 bg-${option.color}-500/20 text-${option.color}-400` 
-                  : 'border-white/20 hover:border-white/30 text-gray-300'
-              }`}>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="font-medium">{option.label}</p>
-                    <p className="text-sm opacity-80">{option.description}</p>
-                  </div>
-                </div>
-              </div>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Notes */}
-      <div className="bg-black/30 backdrop-blur-md rounded-xl p-4 border border-white/20">
-        <Input
-          label="Notes (Optional)"
-          type="text"
-          icon={<FileText size={18} className="text-gray-400" />}
-          {...register('notes')}
-          className="bg-black/40 border-white/20 text-white"
-          placeholder="e.g., For Bali trip flights & hotels"
-        />
-      </div>
       <div className="flex space-x-4 pt-4">
         <Button 
           type="button" 
