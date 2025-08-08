@@ -14,6 +14,19 @@ import {
   DebtRepaymentStrategy
 } from '../types';
 
+// Local IncomeSource type used for dashboard income manager analytics
+export interface IncomeSource {
+  id: string;
+  name: string;
+  type: 'salary' | 'freelance' | 'business' | 'investment' | 'rental' | 'other';
+  amount: number;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  isActive: boolean;
+  lastReceived?: Date;
+  nextExpected?: Date;
+  reliability: 'high' | 'medium' | 'low';
+}
+
 interface FinanceContextType {
   // Data
   transactions: Transaction[];
@@ -22,6 +35,7 @@ interface FinanceContextType {
   budgets: Budget[];
   recurringTransactions: RecurringTransaction[];
   userCategories: UserCategory[];
+  incomeSources: IncomeSource[];
   stats: DashboardStats;
   loading: boolean;
   
@@ -56,6 +70,9 @@ interface FinanceContextType {
   getMonthlyTrends: (months: number) => any[];
   getCategoryBreakdown: (type: 'income' | 'expense', months: number) => any[];
   getNetWorthTrends: (months: number) => any[];
+  getSpendingPatterns: (tx?: Transaction[]) => any[];
+  getIncomeAnalysis: (tx?: Transaction[]) => any[];
+  getBudgetPerformance: () => any[];
   getSplitTransactions: (parentId: string) => Transaction[];
   getTransactionsPaginated: (page: number, pageSize: number, filters?: any) => Promise<{ data: Transaction[]; count: number }>;
   calculateDebtRepaymentStrategy: (strategy: 'snowball' | 'avalanche', extraPayment: number) => DebtRepaymentStrategy;
@@ -64,6 +81,10 @@ interface FinanceContextType {
   getFinancialForecast: () => Promise<any>;
   refreshInsights: () => Promise<void>;
   insights: any[];
+  // Income sources CRUD
+  addIncomeSource: (data: Omit<IncomeSource, 'id'>) => Promise<void>;
+  updateIncomeSource: (id: string, updates: Partial<IncomeSource>) => Promise<void>;
+  deleteIncomeSource: (id: string) => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -136,6 +157,7 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
   const [userCategories, setUserCategories] = useState<UserCategory[]>([]);
   const [insights, setInsights] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
 
   // Load all data when user changes
   useEffect(() => {
@@ -150,6 +172,7 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
       setRecurringTransactions([]);
       setUserCategories([]);
       setInsights([]);
+      setIncomeSources([]);
       setLoading(false);
     }
   }, [user]);
@@ -1602,6 +1625,92 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     return transactions.filter(t => t.parentTransactionId === parentId);
   };
 
+  // Spending patterns analytics derived from a set of transactions (defaults to all)
+  const getSpendingPatterns = (tx?: Transaction[]) => {
+    const source = (tx ?? transactions).filter(t => t.type === 'expense');
+    const byCategory: Record<string, { amount: number; count: number }> = {};
+    source.forEach(t => {
+      if (!byCategory[t.category]) byCategory[t.category] = { amount: 0, count: 0 };
+      byCategory[t.category].amount += t.amount;
+      byCategory[t.category].count += 1;
+    });
+    const total = Object.values(byCategory).reduce((s, v) => s + v.amount, 0);
+    return Object.entries(byCategory)
+      .map(([category, v]) => ({
+        category,
+        amount: v.amount,
+        percentage: total > 0 ? (v.amount / total) * 100 : 0,
+        trend: 'stable',
+        frequency: v.count,
+        avgAmount: v.count > 0 ? v.amount / v.count : 0,
+        peakDay: 'N/A',
+        peakTime: 'N/A',
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  };
+
+  // Income analysis from a set of transactions (defaults to all)
+  const getIncomeAnalysis = (tx?: Transaction[]) => {
+    const source = (tx ?? transactions).filter(t => t.type === 'income');
+    const bySource: Record<string, { amount: number; count: number }> = {};
+    source.forEach(t => {
+      if (!bySource[t.category]) bySource[t.category] = { amount: 0, count: 0 };
+      bySource[t.category].amount += t.amount;
+      bySource[t.category].count += 1;
+    });
+    const total = Object.values(bySource).reduce((s, v) => s + v.amount, 0);
+    return Object.entries(bySource)
+      .map(([cat, v]) => ({
+        source: cat,
+        amount: v.amount,
+        percentage: total > 0 ? (v.amount / total) * 100 : 0,
+        frequency: v.count,
+        avgAmount: v.count > 0 ? v.amount / v.count : 0,
+        trend: 'stable' as const,
+        reliability: 'high' as const,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  };
+
+  // Budget performance based on budgets state
+  const getBudgetPerformance = () => {
+    return budgets.map(b => {
+      const remaining = b.amount - b.spent;
+      const utilization = b.amount > 0 ? (b.spent / b.amount) * 100 : 0;
+      let status: 'under' | 'on_track' | 'over' | 'warning' = 'on_track';
+      if (utilization >= 100) status = 'over';
+      else if (utilization >= 80) status = 'warning';
+      else if (utilization < 80) status = 'under';
+      const trend: 'improving' | 'stable' | 'concerning' = 'stable';
+      return {
+        category: b.category,
+        budgeted: b.amount,
+        spent: b.spent,
+        remaining,
+        utilization,
+        status,
+        trend,
+      };
+    });
+  };
+
+  // In-memory income sources as a simple local store for UI usage
+  const addIncomeSource = async (data: Omit<IncomeSource, 'id'>) => {
+    const newItem: IncomeSource = { id: crypto.randomUUID(), ...data };
+    setIncomeSources(prev => [newItem, ...prev]);
+    showToast('Income source added', 'success');
+  };
+
+  const updateIncomeSource = async (id: string, updates: Partial<IncomeSource>) => {
+    setIncomeSources(prev => prev.map(s => (s.id === id ? { ...s, ...updates } : s)));
+    showToast('Income source updated', 'success');
+  };
+
+  const deleteIncomeSource = async (id: string) => {
+    setIncomeSources(prev => prev.filter(s => s.id !== id));
+    showToast('Income source deleted', 'success');
+  };
+
   const getTransactionsPaginated = async (
     page: number, 
     pageSize: number, 
@@ -1891,6 +2000,7 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     budgets,
     recurringTransactions,
     userCategories,
+    incomeSources,
     stats,
     loading,
     insights,
@@ -1926,6 +2036,9 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     getMonthlyTrends,
     getCategoryBreakdown,
     getNetWorthTrends,
+    getSpendingPatterns,
+    getIncomeAnalysis,
+    getBudgetPerformance,
     getSplitTransactions,
     getTransactionsPaginated,
     calculateDebtRepaymentStrategy,
@@ -1933,6 +2046,11 @@ export const FinanceProvider: React.FC<FinanceProviderProps> = ({ children }) =>
     importData,
     getFinancialForecast,
     refreshInsights,
+
+    // Income sources CRUD
+    addIncomeSource,
+    updateIncomeSource,
+    deleteIncomeSource,
   };
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;

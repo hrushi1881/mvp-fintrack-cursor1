@@ -1,7 +1,6 @@
 import React from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Button } from './Button';
-import { useNavigate } from 'react-router-dom';
 
 interface ErrorFallbackProps {
   error?: Error;
@@ -12,7 +11,18 @@ export const ErrorFallback: React.FC<ErrorFallbackProps> = ({
   error, 
   resetErrorBoundary 
 }) => {
-  const navigate = useNavigate();
+  const goHome = () => {
+    try {
+      // Prefer SPA navigation when router is available
+      if ((window as any).history) {
+        window.location.assign('/');
+        return;
+      }
+    } catch (_) {
+      // no-op; fallback below
+    }
+    window.location.href = '/';
+  };
 
   return (
     <div className="min-h-screen bg-black/90 flex items-center justify-center p-4">
@@ -37,7 +47,7 @@ export const ErrorFallback: React.FC<ErrorFallbackProps> = ({
             </Button>
             
             <Button 
-              onClick={() => navigate('/')} 
+              onClick={goHome} 
               variant="outline"
               className="w-full"
             >

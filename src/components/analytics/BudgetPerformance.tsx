@@ -22,7 +22,7 @@ export const BudgetPerformance: React.FC<BudgetPerformanceProps> = ({
   data,
   timeRange
 }) => {
-  const { formatCurrency } = useInternationalizationContext();
+  const { formatCurrency } = useInternationalization();
 
   const totalBudgeted = data.reduce((sum, item) => sum + item.budgeted, 0);
   const totalSpent = data.reduce((sum, item) => sum + item.spent, 0);
