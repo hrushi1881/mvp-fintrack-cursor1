@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CreditCard, Calendar, Percent, TrendingDown, Plus, Edit3, Trash2, BarChart3, Calculator, Info, AlertTriangle, ShoppingCart, CheckCircle } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
-import { toNumber, calculatePercentage, sanitizeFinancialData } from '../utils/validation';
+import { toNumber, calculatePercentage, formatCurrencySafe, validatePaymentAmount } from '../utils/validation';
 import { TopNavigation } from '../components/layout/TopNavigation';
 import { Modal } from '../components/common/Modal';
 import { LiabilityForm } from '../components/forms/LiabilityForm';
@@ -33,17 +33,18 @@ export const Liabilities: React.FC = () => {
       setError(null);
       
       // Sanitize numeric fields to prevent NaN
-      const sanitizedLiability = sanitizeFinancialData(liability, [
-        'totalAmount', 
-        'remainingAmount', 
-        'interestRate', 
-        'monthlyPayment'
-      ]);
+      const sanitizedLiability = {
+        ...liability,
+        totalAmount: Number(liability.totalAmount) || 0,
+        remainingAmount: Number(liability.remainingAmount) || 0,
+        interestRate: Number(liability.interestRate) || 0,
+        monthlyPayment: Number(liability.monthlyPayment) || 0,
+      };
       
       // Validate business logic
-      const totalAmt = toNumber(sanitizedLiability.totalAmount);
-      const remainingAmt = toNumber(sanitizedLiability.remainingAmount);
-      const monthlyPmt = toNumber(sanitizedLiability.monthlyPayment);
+      const totalAmt = sanitizedLiability.totalAmount;
+      const remainingAmt = sanitizedLiability.remainingAmount;
+      const monthlyPmt = sanitizedLiability.monthlyPayment;
       
       if (remainingAmt > totalAmt) {
         throw new Error("Remaining amount cannot exceed total amount");
@@ -53,33 +54,23 @@ export const Liabilities: React.FC = () => {
         throw new Error("Monthly payment must be greater than zero");
       }
       
-      // Warn about loan without income tracking
-      if (sanitizedLiability.type === 'loan' && !addAsIncome) {
-        const confirmed = window.confirm('No income record will be created for this loan. Your cash flow data may be incomplete. Continue?');
-        if (!confirmed) {
-          setIsSubmitting(false);
-          return;
-        }
-      }
-      
       // Add the liability first
       await addLiability(sanitizedLiability);
       
-      // Only add income transaction if user selected "Cash Loan" and it's not a purchase
-      if (addAsIncome && sanitizedLiability.type !== 'purchase') {
+      // Handle different liability types
+      if (sanitizedLiability.type === 'purchase') {
+        // For purchases on credit, don't add any income transaction
+        // The money was already spent when the purchase was made
+        console.log('Purchase on credit added - no income transaction created');
+      } else if (addAsIncome) {
+        // For loans/credit where user receives cash, add income transaction
         await addTransaction({
           type: 'income',
-          amount: toNumber(sanitizedLiability.totalAmount),
+          amount: sanitizedLiability.totalAmount,
           category: 'Loan',
           description: `Loan received: ${sanitizedLiability.name}`,
           date: new Date(),
         });
-      }
-      
-      // For purchase type, create an expense transaction if linked to a purchase
-      else if (sanitizedLiability.type === 'purchase' && sanitizedLiability.linkedPurchaseId) {
-        // No need to create a new transaction as we're linking to an existing one
-        console.log(`Linked to purchase transaction: ${sanitizedLiability.linkedPurchaseId}`);
       }
       
       setShowModal(false);
@@ -102,17 +93,18 @@ export const Liabilities: React.FC = () => {
       setError(null);
       
       // Sanitize numeric fields to prevent NaN
-      const sanitizedLiability = sanitizeFinancialData(liability, [
-        'totalAmount', 
-        'remainingAmount', 
-        'interestRate', 
-        'monthlyPayment'
-      ]);
+      const sanitizedLiability = {
+        ...liability,
+        totalAmount: Number(liability.totalAmount) || 0,
+        remainingAmount: Number(liability.remainingAmount) || 0,
+        interestRate: Number(liability.interestRate) || 0,
+        monthlyPayment: Number(liability.monthlyPayment) || 0,
+      };
       
       // Validate business logic
-      const totalAmt = toNumber(sanitizedLiability.totalAmount);
-      const remainingAmt = toNumber(sanitizedLiability.remainingAmount);
-      const monthlyPmt = toNumber(sanitizedLiability.monthlyPayment);
+      const totalAmt = sanitizedLiability.totalAmount;
+      const remainingAmt = sanitizedLiability.remainingAmount;
+      const monthlyPmt = sanitizedLiability.monthlyPayment;
       
       if (remainingAmt > totalAmt) {
         throw new Error("Remaining amount cannot exceed total amount");
@@ -201,7 +193,7 @@ export const Liabilities: React.FC = () => {
       if (paymentData.createTransaction) {
         await addTransaction({
           type: 'expense',
-          amount: toNumber(actualPayment),
+          amount: actualPayment,
           category: 'Debt Payment',
           description: paymentData.description || `Payment for ${liability.name}`,
           date: new Date(),
@@ -210,7 +202,7 @@ export const Liabilities: React.FC = () => {
 
       // Update liability remaining amount
       await updateLiability(selectedLiability!, {
-        remainingAmount: Math.max(0, toNumber(currentRemaining) - toNumber(actualPayment))
+        remainingAmount: Math.max(0, currentRemaining - actualPayment)
       });
 
       // Show success message
@@ -317,10 +309,6 @@ export const Liabilities: React.FC = () => {
   };
 
   // Find linked purchase transaction for a liability
-  const getLinkedPurchase = (liability: Liability) => {
-    if (!liability.linkedPurchaseId) return null;
-    return transactions.find(t => t.id === liability.linkedPurchaseId);
-  };
 
   const liabilityToEdit = editingLiability ? {
     name: editingLiability.name,
@@ -331,7 +319,6 @@ export const Liabilities: React.FC = () => {
     monthlyPayment: editingLiability.monthlyPayment,
     due_date: editingLiability.due_date,
     start_date: editingLiability.start_date,
-    linkedPurchaseId: editingLiability.linkedPurchaseId
   } : null;
 
   return (
@@ -412,7 +399,6 @@ export const Liabilities: React.FC = () => {
               const TypeIcon = getTypeIcon(liability.type);
               const daysUntilDue = getDaysUntilDue(liability.due_date);
               const liabilityStatus = getLiabilityStatus(liability);
-              const linkedPurchase = getLinkedPurchase(liability);
               
               return (
                 <div key={liability.id} className="bg-black/20 backdrop-blur-md rounded-2xl p-4 sm:p-6 border border-white/10">
@@ -460,27 +446,16 @@ export const Liabilities: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Linked Purchase Info (if applicable) */}
-                  {liability.type === 'purchase' && linkedPurchase && (
-                    linkedPurchase ? (
-                      <div className="mb-4 p-3 bg-purple-500/20 rounded-lg border border-purple-500/30">
-                        <div className="flex items-center space-x-2">
-                          <ShoppingCart size={14} className="text-purple-400" />
-                          <p className="text-xs text-purple-300">
-                            Linked to purchase: {linkedPurchase.description}
-                          </p>
-                        </div>
+                  {/* Purchase Type Info */}
+                  {liability.type === 'purchase' && (
+                    <div className="mb-4 p-3 bg-purple-500/20 rounded-lg border border-purple-500/30">
+                      <div className="flex items-center space-x-2">
+                        <ShoppingCart size={14} className="text-purple-400" />
+                        <p className="text-xs text-purple-300">
+                          Purchase on Credit - Pay down this debt to reduce your liability
+                        </p>
                       </div>
-                    ) : (
-                      <div className="mb-4 p-3 bg-warning-500/20 rounded-lg border border-warning-500/30">
-                        <div className="flex items-center space-x-2">
-                          <AlertTriangle size={14} className="text-warning-400" />
-                          <p className="text-xs text-warning-300">
-                            Purchase link missing - transaction may have been deleted
-                          </p>
-                        </div>
-                      </div>
-                    )
+                    </div>
                   )}
 
                   {/* Amount Section */}

@@ -81,13 +81,12 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
       }
       
       onSubmit({
-        amount: toNumber(amount),
+        amount: Number(amount) || 0,
         description: data.description || `Payment for ${liability?.name}`,
         createTransaction: data.createTransaction,
       });
     } catch (error: any) {
       console.error('Error processing payment:', error);
-      setError(error.message || 'Failed to process payment');
       setIsSubmitting(false);
     } finally {
       // Don't reset here as parent handles it
@@ -275,7 +274,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ liability, onSubmit, o
         </div>
 
         {/* Warning for large payments */}
-        {watchedAmount > monthlyPayment * 3 && monthlyPayment > 0 && (
+        {Number(watchedAmount) > monthlyPayment * 3 && monthlyPayment > 0 && (
           <div className="bg-warning-500/20 rounded-lg p-4 border border-warning-500/30">
             <div className="flex items-start space-x-2">
               <AlertTriangle size={16} className="text-warning-400 mt-0.5" />

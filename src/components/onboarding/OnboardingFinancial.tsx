@@ -71,20 +71,20 @@ export const OnboardingFinancial: React.FC<OnboardingFinancialProps> = ({
         {/* Initial Balance */}
         <div className="bg-black/30 backdrop-blur-md rounded-xl p-4 border border-white/20">
           <Input
-            label="Current Bank Balance"
+            label="Starting Account Balance"
             type="number"
             step="0.01"
             placeholder="e.g., 5000"
             icon={<CurrencyIcon currencyCode={selectedCurrency} className="text-success-400" />}
             {...register('initialBalance', {
-              required: 'Initial balance is required to start your journey',
+              required: 'Starting balance is required',
               min: { value: 0, message: 'Balance cannot be negative' }
             })}
             error={errors.initialBalance?.message}
             className="bg-black/20 border-white/20 text-white"
           />
           <p className="text-sm text-gray-400 mt-2">
-            This helps us set up your initial financial state and track your progress accurately.
+            This is your current account balance - we'll only record this once as your starting point.
           </p>
         </div>
 

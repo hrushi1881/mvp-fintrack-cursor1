@@ -143,7 +143,7 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
       {!initialData && selectedType !== 'purchase' && (
         <div className="bg-black/30 backdrop-blur-md rounded-xl p-4 border border-white/20">
           <label className="block text-sm font-medium text-gray-300 mb-3">
-            How did you acquire this debt?
+            What type of debt is this?
           </label>
           
           <div className="grid grid-cols-1 gap-3">
@@ -162,9 +162,9 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
                 <div className="flex items-center space-x-3">
                   <Wallet size={20} className={addAsIncome ? 'text-success-400' : 'text-gray-400'} />
                   <div>
-                    <p className="font-medium">Cash Loan</p>
+                    <p className="font-medium">Cash Loan/Credit</p>
                     <p className="text-sm opacity-80">
-                      I received money directly (loan, credit) - add funds to my account
+                      I received cash/money directly - record as income
                     </p>
                   </div>
                 </div>
@@ -184,11 +184,11 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
                   : 'border-white/20 hover:border-white/30 text-gray-300'
               }`}>
                 <div className="flex items-center space-x-3">
-                  <ShoppingCart size={20} className={!addAsIncome ? 'text-primary-400' : 'text-gray-400'} />
+                  <CreditCard size={20} className={!addAsIncome ? 'text-primary-400' : 'text-gray-400'} />
                   <div>
-                    <p className="font-medium">Purchase on Credit</p>
+                    <p className="font-medium">Existing Debt</p>
                     <p className="text-sm opacity-80">
-                      I bought something with financing - just track the debt
+                      Track existing debt without adding income
                     </p>
                   </div>
                 </div>
@@ -206,8 +206,8 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
               <Info size={16} className="mr-2" />
               <span className="text-sm font-medium">
                 {addAsIncome 
-                  ? 'The loan amount will be added to your account as income'
-                  : 'Only the debt will be tracked - no income will be added'
+                  ? 'The amount will be recorded as income (cash received)'
+                  : 'Only the debt will be tracked - no income recorded'
                 }
               </span>
             </div>
@@ -274,34 +274,20 @@ export const LiabilityForm: React.FC<LiabilityFormProps> = ({ onSubmit, onCancel
 
       {/* Link to Purchase Transaction - Only for purchase type */}
       {selectedType === 'purchase' && (
-        <div className="bg-black/30 backdrop-blur-md rounded-xl p-4 border border-white/20">
-          <label className="block text-sm font-medium text-gray-300 mb-3">
-            Link to Purchase Transaction (Optional)
-          </label>
-          
-          {recentTransactions.length > 0 ? (
-            <div className="space-y-2">
-              <select
-                {...register('linkedPurchaseId')}
-                className="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-white"
-              >
-                <option value="">Select a transaction</option>
-                {recentTransactions.map(transaction => (
-                  <option key={transaction.id} value={transaction.id}>
-                    {transaction.description} - {currency.symbol}{transaction.amount.toLocaleString()} ({new Date(transaction.date).toLocaleDateString()})
-                  </option>
-                ))}
-              </select>
-              
-              <p className="text-xs text-gray-400">
-                Linking to a purchase transaction helps track what this debt was used for.
+        <div className="bg-purple-500/20 rounded-lg p-4 border border-purple-500/30">
+          <div className="flex items-start space-x-3">
+            <ShoppingCart size={18} className="text-purple-400 mt-0.5" />
+            <div>
+              <h4 className="font-medium text-purple-400 mb-1">Purchase on Credit</h4>
+              <p className="text-sm text-purple-300">
+                This tracks a purchase you made on credit (like EMI, credit card, or installment plan). 
+                No income will be recorded since you didn't receive cash - you received goods/services.
+              </p>
+              <p className="text-xs text-purple-200 mt-2">
+                When you make payments, the money will be deducted from your account balance.
               </p>
             </div>
-          ) : (
-            <p className="text-sm text-gray-400">
-              No recent expense transactions found. Add a transaction first or leave this empty.
-            </p>
-          )}
+          </div>
         </div>
       )}
 

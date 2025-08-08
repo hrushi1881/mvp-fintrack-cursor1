@@ -122,3 +122,23 @@ export const sanitizeFinancialData = <T extends Record<string, any>>(
   
   return sanitized;
 };
+// Format currency safely
+export const formatCurrencySafe = (amount: number, currencySymbol: string = '$'): string => {
+  const safeAmount = toNumber(amount);
+  return `${currencySymbol}${safeAmount.toLocaleString()}`;
+};
+
+// Validate payment amount
+export const validatePaymentAmount = (amount: number, maxAmount: number): { isValid: boolean; error?: string } => {
+  const numAmount = toNumber(amount);
+  
+  if (numAmount <= 0) {
+    return { isValid: false, error: 'Payment amount must be greater than 0' };
+  }
+  
+  if (numAmount > maxAmount) {
+    return { isValid: false, error: `Payment cannot exceed remaining balance of ${maxAmount}` };
+  }
+  
+  return { isValid: true };
+};
